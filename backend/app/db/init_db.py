@@ -1,5 +1,5 @@
 from app.db.base import Base
-from app.db.models import Analysis, ImagePair, Project, Result, SpecimenConfig
+from app.db.models import Analysis, ImagePair, Project, Result, SpecimenConfig, User
 from app.db.session import engine
 
 

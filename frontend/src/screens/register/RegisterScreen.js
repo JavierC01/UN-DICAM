@@ -1,14 +1,62 @@
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
+import { register } from '../../api/auth';
+import { ROUTES } from '../../navigation/routes';
 
 export default function RegisterScreen() {
+  const navigation = useNavigation();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleRegister = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await register(fullName, email, password);
+      navigation.navigate(ROUTES.LOGIN);
+    } catch (err) {
+      setError(err.message || 'No fue posible crear la cuenta.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Crear cuenta</Text>
-      <TextInput style={styles.input} placeholder="Nombre completo" />
-      <TextInput style={styles.input} placeholder="Correo electronico" keyboardType="email-address" />
-      <TextInput style={styles.input} placeholder="Contrasena" secureTextEntry />
-      <TouchableOpacity style={styles.button}>
-        <Text style={styles.buttonText}>Registrarme</Text>
+
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
+
+      <TextInput style={styles.input} placeholder="Nombre completo" value={fullName} onChangeText={setFullName} />
+      <TextInput
+        style={styles.input}
+        placeholder="Correo electronico"
+        keyboardType="email-address"
+        autoCapitalize="none"
+        value={email}
+        onChangeText={setEmail}
+      />
+      <TextInput
+        style={styles.input}
+        placeholder="Contrasena"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+      <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Registrarme</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.link} onPress={() => navigation.navigate(ROUTES.LOGIN)}>
+        <Text style={styles.linkText}>Ya tengo una cuenta</Text>
       </TouchableOpacity>
     </View>
   );
@@ -26,6 +74,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 24,
     color: '#17202a',
+  },
+  errorBox: {
+    borderWidth: 1,
+    borderColor: '#f5c6cb',
+    backgroundColor: '#fdecea',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: '#c0392b',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   input: {
     height: 48,
@@ -47,5 +108,13 @@ const styles = StyleSheet.create({
   buttonText: {
     color: '#fff',
     fontWeight: '700',
+  },
+  link: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  linkText: {
+    color: '#1f6feb',
+    fontWeight: '600',
   },
 });

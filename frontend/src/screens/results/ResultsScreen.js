@@ -1,6 +1,11 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
+import { ROUTES } from '../../navigation/routes';
 
 export default function ResultsScreen() {
+  const navigation = useNavigation();
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Resultados</Text>
@@ -8,6 +13,9 @@ export default function ResultsScreen() {
         <Text style={styles.label}>Estado del analisis</Text>
         <Text style={styles.value}>Pendiente de datos</Text>
       </View>
+      <TouchableOpacity style={styles.button} onPress={() => navigation.navigate(ROUTES.REPORTS)}>
+        <Text style={styles.buttonText}>Ver reportes</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -39,5 +47,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#17202a',
+  },
+  button: {
+    height: 48,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1f6feb',
+    marginTop: 16,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });

@@ -1,17 +1,33 @@
+import { useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { ROUTES } from '../../navigation/routes';
+
 export default function ProjectsScreen() {
+  const navigation = useNavigation();
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Proyectos</Text>
-        <TouchableOpacity style={styles.button}>
+        <TouchableOpacity style={styles.button} onPress={() => navigation.navigate(ROUTES.VIDEO_CAPTURE)}>
           <Text style={styles.buttonText}>Nuevo</Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.card}>
+      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate(ROUTES.RESULTS)}>
         <Text style={styles.projectName}>Proyecto de ejemplo</Text>
         <Text style={styles.projectMeta}>Sin mediciones registradas</Text>
+      </TouchableOpacity>
+      <View style={styles.quickLinks}>
+        <TouchableOpacity style={styles.quickLink} onPress={() => navigation.navigate(ROUTES.REPORTS)}>
+          <Text style={styles.quickLinkText}>Reportes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickLink} onPress={() => navigation.navigate(ROUTES.SETUP)}>
+          <Text style={styles.quickLinkText}>Configuracion</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickLink} onPress={() => navigation.navigate(ROUTES.USER_MANUAL)}>
+          <Text style={styles.quickLinkText}>Manual</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -61,5 +77,26 @@ const styles = StyleSheet.create({
   projectMeta: {
     marginTop: 6,
     color: '#5d6d7e',
+  },
+  quickLinks: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 18,
+  },
+  quickLink: {
+    flex: 1,
+    marginHorizontal: 4,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e5eaf0',
+  },
+  quickLinkText: {
+    color: '#5d6d7e',
+    fontWeight: '600',
+    fontSize: 13,
   },
 });
