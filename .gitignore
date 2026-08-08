@@ -44,3 +44,7 @@ package-lock.json
 # Environment variables
 .env
 .env.local
+
+# Almacenamiento generado en runtime (imagenes de resultados, etc.)
+backend/storage/
+

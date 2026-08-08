@@ -26,6 +26,8 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     specimen_config: Mapped["SpecimenConfig | None"] = relationship(back_populates="project", cascade="all, delete-orphan")
+    tracking_mesh: Mapped["TrackingMesh | None"] = relationship(back_populates="project", cascade="all, delete-orphan")
+    analyses: Mapped[list["Analysis"]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
 class SpecimenConfig(Base):
@@ -43,6 +45,19 @@ class SpecimenConfig(Base):
     area_mm2: Mapped[float] = mapped_column(Float, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="specimen_config")
+
+
+class TrackingMesh(Base):
+    __tablename__ = "tracking_meshes"
+
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id"), primary_key=True)
+    frame_width: Mapped[int] = mapped_column(Integer, nullable=False)
+    frame_height: Mapped[int] = mapped_column(Integer, nullable=False)
+    poligono: Mapped[list] = mapped_column(JSON, nullable=False)
+    nodos: Mapped[list] = mapped_column(JSON, nullable=False)
+    area_px: Mapped[float] = mapped_column(Float, nullable=False)
+
+    project: Mapped[Project] = relationship(back_populates="tracking_mesh")
 
 
 class ImagePair(Base):
@@ -63,6 +78,9 @@ class Analysis(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending", nullable=False)
     params: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    project: Mapped[Project] = relationship(back_populates="analyses")
+    results: Mapped[list["Result"]] = relationship(back_populates="analysis", cascade="all, delete-orphan")
+
 
 class Result(Base):
     __tablename__ = "results"
@@ -70,3 +88,5 @@ class Result(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     analysis_id: Mapped[str] = mapped_column(String(80), ForeignKey("analyses.id"), nullable=False)
     data: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    analysis: Mapped[Analysis] = relationship(back_populates="results")

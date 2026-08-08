@@ -5,6 +5,7 @@ import LoginScreen from '../screens/login';
 import RegisterScreen from '../screens/register';
 import ProjectsScreen from '../screens/projects';
 import VideoCaptureScreen from '../screens/video_capture';
+import MeshScreen from '../screens/mesh';
 import ResultsScreen from '../screens/results';
 import ReportsScreen from '../screens/reports';
 import SetupScreen from '../screens/setup';
@@ -21,9 +22,10 @@ export default function AppNavigator() {
         <Stack.Screen name={ROUTES.REGISTER} component={RegisterScreen} />
         <Stack.Screen name={ROUTES.PROJECTS} component={ProjectsScreen} options={{ headerShown: true, title: 'Proyectos' }} />
         <Stack.Screen name={ROUTES.VIDEO_CAPTURE} component={VideoCaptureScreen} options={{ headerShown: true, title: 'Captura de video' }} />
+        <Stack.Screen name={ROUTES.MESH} component={MeshScreen} options={{ headerShown: true, title: 'Malla de rastreo' }} />
         <Stack.Screen name={ROUTES.RESULTS} component={ResultsScreen} options={{ headerShown: true, title: 'Resultados' }} />
         <Stack.Screen name={ROUTES.REPORTS} component={ReportsScreen} options={{ headerShown: true, title: 'Reportes' }} />
-        <Stack.Screen name={ROUTES.SETUP} component={SetupScreen} options={{ headerShown: true, title: 'Configuracion' }} />
+        <Stack.Screen name={ROUTES.SETUP} component={SetupScreen} options={{ headerShown: true, title: 'Calibracion de probeta' }} />
         <Stack.Screen name={ROUTES.USER_MANUAL} component={UserManualScreen} options={{ headerShown: true, title: 'Manual de usuario' }} />
       </Stack.Navigator>
     </NavigationContainer>

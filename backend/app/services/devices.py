@@ -50,6 +50,14 @@ class DeviceService:
             duration_s=duration_s,
         )
 
+    def open_capture_for_source_id(self, source_id: int | str) -> cv2.VideoCapture:
+        is_camera = isinstance(source_id, int) or (isinstance(source_id, str) and source_id.isdigit())
+        source: int | str = int(source_id) if is_camera else source_id
+        cap = cv2.VideoCapture(source, cv2.CAP_DSHOW if is_camera else cv2.CAP_ANY)
+        if not cap.isOpened():
+            raise DeviceServiceError("No se pudo abrir la fuente de video para el analisis")
+        return cap
+
     def get_first_frame(self, source_id: str) -> VideoFrameResponse:
         source: int | str = int(source_id) if source_id.isdigit() else source_id
         cap = cv2.VideoCapture(source, cv2.CAP_DSHOW if isinstance(source, int) else cv2.CAP_ANY)
