@@ -48,3 +48,6 @@ package-lock.json
 # Almacenamiento generado en runtime (imagenes de resultados, etc.)
 backend/storage/
 
+
+# Grafo de conocimiento generado por graphify
+graphify-out/
