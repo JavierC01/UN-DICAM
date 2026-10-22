@@ -10,6 +10,7 @@ from app.db.models import Analysis, Project, Result, SpecimenConfig, TrackingMes
 from app.db.session import SessionLocal
 from app.dic.analisis import Analisis
 from app.dic.mapas import guardar_mapa
+from app.dic.ocr import extract_load_value
 from app.dic.pipeline import procesar_par_frames
 from app.dic.probeta import MedidasProbeta, Probeta
 from app.services.devices import DeviceService, DeviceServiceError
@@ -18,7 +19,7 @@ from app.services.devices import DeviceService, DeviceServiceError
 # y el cliente no especifico frame_fin.
 DEFAULT_LIVE_FRAMES = 30
 
-# La lectura del valor de carga desde el video (celda de carga por OCR) se implementa en la Fase 5.
+# Se usa si el proyecto no configuro roi_carga o el OCR no pudo leer un valor en ese frame.
 CARGA_N_PLACEHOLDER = 0.0
 
 
@@ -119,13 +120,20 @@ def process_full_analysis(self, analysis_id: str, project_id: str, source_id: in
                 coef_muestras.append(resultado.coef_correlacion_medio)
                 ultimo_campo = resultado.campo
 
+                carga_n = CARGA_N_PLACEHOLDER
+                if specimen.roi_carga:
+                    try:
+                        carga_n = extract_load_value(frame, specimen.roi_carga)
+                    except Exception:
+                        carga_n = CARGA_N_PLACEHOLDER
+
                 datos = probeta.preparar_datos_analisis(
                     u_px=resultado.nodos[4].u_px,
                     v_px=resultado.nodos[4].v_px,
                     eps_xx=resultado.campo.eps_xx_medio,
                     eps_yy=resultado.campo.eps_yy_medio,
                     eps_xy=resultado.campo.eps_xy_medio,
-                    carga_n=CARGA_N_PLACEHOLDER,
+                    carga_n=carga_n,
                 )
                 analisis.procesar_frame(datos, frame_id=frame_inicio + idx)
 

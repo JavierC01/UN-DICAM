@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.common import RoiCarga
+
 
 class SpecimenConfigRequest(BaseModel):
     project_id: str
@@ -8,7 +10,7 @@ class SpecimenConfigRequest(BaseModel):
     ancho_mm: float = Field(gt=0)
     espesor_mm: float = Field(gt=0)
     long_calibre_mm: float = Field(gt=0)
-    roi_carga: dict | None = None
+    roi_carga: RoiCarga | None = None
 
 
 class SpecimenConfigResponse(BaseModel):
