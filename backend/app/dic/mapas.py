@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 
 def guardar_mapa(valores: list[list[float]], titulo: str, ruta: Path) -> None:
-    """Renderiza la grilla 2x2 de deformacion como un mapa de calor JPG."""
+    """Renderiza la grilla de celdas de deformacion como un mapa de calor JPG."""
     fig, ax = plt.subplots(figsize=(3, 3))
     imagen = ax.imshow(valores, cmap="jet", interpolation="bilinear")
     ax.set_title(titulo, fontsize=10)

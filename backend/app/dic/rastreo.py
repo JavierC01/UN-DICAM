@@ -17,10 +17,10 @@ class Rastreo:
         self.frame_width = frame_width
         self.frame_height = frame_height
 
-    def construir_malla(self, puntos: list[dict[str, float]]) -> MallaRastreo:
+    def construir_malla(self, puntos: list[dict[str, float]], filas: int = 3, columnas: int = 3) -> MallaRastreo:
         area = self.area_poligono(puntos)
         mascara = self._generar_mascara(puntos)
-        nodos = self._distribuir_9_nodos(mascara)
+        nodos = self._distribuir_nodos(mascara, filas, columnas)
         return MallaRastreo(nodos=nodos, poligono=puntos, area_px=area, mascara=mascara)
 
     def _generar_mascara(self, puntos: list[dict[str, float]]) -> np.ndarray:
@@ -29,13 +29,13 @@ class Rastreo:
         cv2.fillPoly(mask, polygon, 255)
         return mask
 
-    def _distribuir_9_nodos(self, mascara: np.ndarray) -> list[dict[str, float]]:
+    def _distribuir_nodos(self, mascara: np.ndarray, filas: int, columnas: int) -> list[dict[str, float]]:
         ys, xs = np.where(mascara > 0)
         if len(xs) == 0:
             raise ValueError("La mascara del poligono esta vacia")
         nodes: list[dict[str, float]] = []
-        for y in np.linspace(ys.min(), ys.max(), 3):
-            for x in np.linspace(xs.min(), xs.max(), 3):
+        for y in np.linspace(ys.min(), ys.max(), filas):
+            for x in np.linspace(xs.min(), xs.max(), columnas):
                 px, py = self._pixel_mas_cercano(mascara, int(round(x)), int(round(y)))
                 nodes.append({"x": float(px), "y": float(py)})
         return nodes

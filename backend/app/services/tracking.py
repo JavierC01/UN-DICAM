@@ -22,8 +22,14 @@ class TrackingService:
         if not validation.valid:
             raise TrackingServiceError(validation.message)
         mask = self._build_mask(payload.frame_width, payload.frame_height, payload.puntos)
-        nodes = self._distribute_9_nodes(mask)
-        return MeshResponse(nodos=nodes, poligono=payload.puntos, area_px=validation.area_px)
+        nodes = self._distribute_nodes(mask, payload.filas, payload.columnas)
+        return MeshResponse(
+            nodos=nodes,
+            poligono=payload.puntos,
+            area_px=validation.area_px,
+            filas=payload.filas,
+            columnas=payload.columnas,
+        )
 
     def _build_mask(self, width: int, height: int, points: list[Point]) -> np.ndarray:
         polygon = np.array([[(int(p.x), int(p.y)) for p in points]], dtype=np.int32)
@@ -31,13 +37,13 @@ class TrackingService:
         cv2.fillPoly(mask, polygon, 255)
         return mask
 
-    def _distribute_9_nodes(self, mask: np.ndarray) -> list[Point]:
+    def _distribute_nodes(self, mask: np.ndarray, filas: int, columnas: int) -> list[Point]:
         ys, xs = np.where(mask > 0)
         if len(xs) == 0:
             raise TrackingServiceError("La mascara del poligono esta vacia")
 
-        x_values = np.linspace(xs.min(), xs.max(), 3)
-        y_values = np.linspace(ys.min(), ys.max(), 3)
+        x_values = np.linspace(xs.min(), xs.max(), columnas)
+        y_values = np.linspace(ys.min(), ys.max(), filas)
         nodes: list[Point] = []
 
         for y in y_values:

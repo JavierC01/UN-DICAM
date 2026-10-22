@@ -26,6 +26,8 @@ def build_mesh(payload: MeshRequest, db: Session = Depends(get_db)) -> MeshRespo
     stored.frame_height = payload.frame_height
     stored.poligono = [p.model_dump() for p in mesh.poligono]
     stored.nodos = [p.model_dump() for p in mesh.nodos]
+    stored.filas = mesh.filas
+    stored.columnas = mesh.columnas
     stored.area_px = mesh.area_px
 
     db.commit()

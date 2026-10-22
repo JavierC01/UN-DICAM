@@ -18,6 +18,9 @@ import { startAnalysis } from '../../api/analysis';
 import { ROUTES } from '../../navigation/routes';
 
 const DEFAULT_PARAMS = { subset_size: '32', step_size: '8', search_range: '20' };
+const DEFAULT_GRID = { filas: '3', columnas: '3' };
+const MIN_GRID = 2;
+const MAX_GRID = 20;
 
 export default function MeshScreen() {
   const navigation = useNavigation();
@@ -30,6 +33,7 @@ export default function MeshScreen() {
   const [validating, setValidating] = useState(false);
   const [mesh, setMesh] = useState(null);
   const [building, setBuilding] = useState(false);
+  const [grid, setGrid] = useState(DEFAULT_GRID);
   const [params, setParams] = useState(DEFAULT_PARAMS);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
@@ -75,6 +79,13 @@ export default function MeshScreen() {
 
   const handleBuildMesh = async () => {
     setError('');
+    const filas = Number(grid.filas);
+    const columnas = Number(grid.columnas);
+    const fuera = (n) => !Number.isInteger(n) || n < MIN_GRID || n > MAX_GRID;
+    if (fuera(filas) || fuera(columnas)) {
+      setError(`Filas y columnas deben ser enteros entre ${MIN_GRID} y ${MAX_GRID}.`);
+      return;
+    }
     setBuilding(true);
     try {
       const result = await buildMesh({
@@ -82,6 +93,8 @@ export default function MeshScreen() {
         frame_width: frameWidth,
         frame_height: frameHeight,
         puntos: points,
+        filas,
+        columnas,
       });
       setMesh(result);
     } catch (err) {
@@ -179,6 +192,40 @@ export default function MeshScreen() {
         </Text>
       ) : null}
 
+      <View style={styles.paramsBox}>
+        <Text style={styles.paramsTitle}>Densidad de la malla</Text>
+        <View style={styles.paramsRow}>
+          <View style={styles.paramField}>
+            <Text style={styles.label}>Filas de nodos</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              value={grid.filas}
+              onChangeText={(text) => {
+                setMesh(null);
+                setGrid((prev) => ({ ...prev, filas: text }));
+              }}
+            />
+          </View>
+          <View style={styles.paramField}>
+            <Text style={styles.label}>Columnas de nodos</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              value={grid.columnas}
+              onChangeText={(text) => {
+                setMesh(null);
+                setGrid((prev) => ({ ...prev, columnas: text }));
+              }}
+            />
+          </View>
+        </View>
+        <Text style={styles.label}>
+          Total: {(Number(grid.filas) || 0) * (Number(grid.columnas) || 0)} nodos. Mas nodos dan un mapa mas fino pero
+          un analisis mas lento.
+        </Text>
+      </View>
+
       <TouchableOpacity
         style={styles.button}
         onPress={handleBuildMesh}
@@ -189,7 +236,7 @@ export default function MeshScreen() {
 
       {mesh ? (
         <View style={styles.meshSummary}>
-          <Text style={styles.meshSummaryText}>Malla construida: {mesh.nodos.length} nodos</Text>
+          <Text style={styles.meshSummaryText}>Malla construida: {mesh.filas}×{mesh.columnas} = {mesh.nodos.length} nodos</Text>
         </View>
       ) : null}
 

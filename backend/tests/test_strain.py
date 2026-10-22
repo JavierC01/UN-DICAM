@@ -3,8 +3,8 @@ import pytest
 from app.dic.strain import calcular_deformaciones
 
 
-def _grilla_3x3(paso_mm: float = 10.0) -> list[dict[str, float]]:
-    return [{"x": x * paso_mm, "y": y * paso_mm} for y in range(3) for x in range(3)]
+def _grilla_3x3(paso_mm: float = 10.0, filas: int = 3, columnas: int = 3) -> list[dict[str, float]]:
+    return [{"x": x * paso_mm, "y": y * paso_mm} for y in range(filas) for x in range(columnas)]
 
 
 def test_traccion_uniforme_en_y_da_eps_yy_constante():
@@ -37,6 +37,17 @@ def test_traslacion_rigida_da_deformacion_nula():
     assert campo.eps_xy_medio == pytest.approx(0.0)
 
 
-def test_requiere_exactamente_9_nodos():
+def test_grilla_rectangular_da_celdas_filas_menos_uno_por_columnas_menos_uno():
+    nodos = _grilla_3x3(filas=4, columnas=5)
+    k = 0.02
+    desplazamientos = [(k * nodo["x"], 0.0) for nodo in nodos]
+
+    campo = calcular_deformaciones(nodos, desplazamientos, columnas=5)
+
+    assert len(campo.eps_xx) == 3 and all(len(fila) == 4 for fila in campo.eps_xx)
+    assert campo.eps_xx_medio == pytest.approx(k)
+
+
+def test_requiere_grilla_valida():
     with pytest.raises(ValueError):
         calcular_deformaciones([{"x": 0.0, "y": 0.0}], [(0.0, 0.0)])

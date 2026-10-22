@@ -111,7 +111,8 @@ def process_full_analysis(self, analysis_id: str, project_id: str, source_id: in
 
                 try:
                     resultado = procesar_par_frames(
-                        imagen_ref, imagen_def, nodos_ref, probeta.mm_por_px, subset_size, search_range
+                        imagen_ref, imagen_def, nodos_ref, probeta.mm_por_px, subset_size, search_range,
+                        mesh.filas, mesh.columnas,
                     )
                 except ValueError:
                     continue
@@ -128,8 +129,8 @@ def process_full_analysis(self, analysis_id: str, project_id: str, source_id: in
                         carga_n = CARGA_N_PLACEHOLDER
 
                 datos = probeta.preparar_datos_analisis(
-                    u_px=resultado.nodos[4].u_px,
-                    v_px=resultado.nodos[4].v_px,
+                    u_px=resultado.nodo_centro.u_px,
+                    v_px=resultado.nodo_centro.v_px,
                     eps_xx=resultado.campo.eps_xx_medio,
                     eps_yy=resultado.campo.eps_yy_medio,
                     eps_xy=resultado.campo.eps_xy_medio,

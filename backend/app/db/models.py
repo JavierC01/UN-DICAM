@@ -55,6 +55,8 @@ class TrackingMesh(Base):
     frame_height: Mapped[int] = mapped_column(Integer, nullable=False)
     poligono: Mapped[list] = mapped_column(JSON, nullable=False)
     nodos: Mapped[list] = mapped_column(JSON, nullable=False)
+    filas: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
+    columnas: Mapped[int] = mapped_column(Integer, nullable=False, default=3, server_default="3")
     area_px: Mapped[float] = mapped_column(Float, nullable=False)
 
     project: Mapped[Project] = relationship(back_populates="tracking_mesh")

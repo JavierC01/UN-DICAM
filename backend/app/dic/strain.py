@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 
-# La malla de rastreo siempre tiene 9 nodos en una grilla 3x3 (ver Rastreo._distribuir_9_nodos):
+# La malla de rastreo es una grilla filas x columnas ordenada por filas (ver Rastreo._distribuir_nodos), p. ej. 3x3:
 #   0 1 2
 #   3 4 5
 #   6 7 8
-_CUADRANTES = ((0, 1, 3, 4), (1, 2, 4, 5), (3, 4, 6, 7), (4, 5, 7, 8))
 
 
 @dataclass(frozen=True)
@@ -51,26 +50,33 @@ def _deformacion_cuadrante(
 
 
 def calcular_deformaciones(
-    nodos_mm: list[dict[str, float]], desplazamientos_mm: list[tuple[float, float]]
+    nodos_mm: list[dict[str, float]], desplazamientos_mm: list[tuple[float, float]], columnas: int = 3
 ) -> CampoDeformacion:
-    """Calcula la deformacion ingenieril (exx, eyy, exy) en los 4 cuadrantes de la grilla 3x3
+    """Calcula la deformacion ingenieril (exx, eyy, exy) en cada celda de la grilla de nodos
 
-    de nodos, usando diferencias finitas entre los nodos que forman cada cuadrante
+    (filas-1 x columnas-1 celdas), usando diferencias finitas entre los 4 nodos de cada celda
     (aproximacion de extensometro virtual, sin necesitar un campo denso por pixel).
     """
-    if len(nodos_mm) != 9 or len(desplazamientos_mm) != 9:
-        raise ValueError("Se requieren exactamente 9 nodos organizados en una grilla 3x3")
+    filas = len(nodos_mm) // columnas if columnas > 0 else 0
+    if filas < 2 or columnas < 2 or len(nodos_mm) != filas * columnas or len(desplazamientos_mm) != len(nodos_mm):
+        raise ValueError("Se requiere una grilla de nodos de al menos 2x2 organizada por filas")
 
-    valores = [_deformacion_cuadrante(cuadrante, nodos_mm, desplazamientos_mm) for cuadrante in _CUADRANTES]
-    eps_xx = [[valores[0][0], valores[1][0]], [valores[2][0], valores[3][0]]]
-    eps_yy = [[valores[0][1], valores[1][1]], [valores[2][1], valores[3][1]]]
-    eps_xy = [[valores[0][2], valores[1][2]], [valores[2][2], valores[3][2]]]
+    valores = []
+    for f in range(filas - 1):
+        fila = []
+        for c in range(columnas - 1):
+            sup_izq = f * columnas + c
+            inf_izq = sup_izq + columnas
+            esquinas = (sup_izq, sup_izq + 1, inf_izq, inf_izq + 1)
+            fila.append(_deformacion_cuadrante(esquinas, nodos_mm, desplazamientos_mm))
+        valores.append(fila)
+    celdas = [v for fila in valores for v in fila]
 
     return CampoDeformacion(
-        eps_xx=eps_xx,
-        eps_yy=eps_yy,
-        eps_xy=eps_xy,
-        eps_xx_medio=sum(v[0] for v in valores) / len(valores),
-        eps_yy_medio=sum(v[1] for v in valores) / len(valores),
-        eps_xy_medio=sum(v[2] for v in valores) / len(valores),
+        eps_xx=[[v[0] for v in fila] for fila in valores],
+        eps_yy=[[v[1] for v in fila] for fila in valores],
+        eps_xy=[[v[2] for v in fila] for fila in valores],
+        eps_xx_medio=sum(v[0] for v in celdas) / len(celdas),
+        eps_yy_medio=sum(v[1] for v in celdas) / len(celdas),
+        eps_xy_medio=sum(v[2] for v in celdas) / len(celdas),
     )
