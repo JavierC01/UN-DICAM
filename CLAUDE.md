@@ -1,70 +1,182 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guía para agentes de codificación (Claude Code, OpenCode) que trabajan en este repositorio.
+Los puntos marcados **[DECIDIR]** son decisiones abiertas del autor: preguntar antes de asumirlas.
 
-UN-DICAM (DIC Tool): Digital Image Correlation for tensile tests on specimens ("probetas"). FastAPI + Celery + Redis + PostgreSQL backend, Expo / React Native frontend. Code, comments, identifiers in the DIC domain, and user-facing messages are in Spanish — keep that convention.
+## 1. Producto
 
-## Commands
+UN-DICAM es una herramienta **open source** de correlación digital de imágenes (DIC) 2D, con una sola cámara, para caracterizar materiales y elementos de construcción como alternativa o complemento a los ensayos convencionales:
 
-Backend (run from `backend/` so `app.` imports resolve; Python deps live in the root `requirements.txt`, `backend/requirements.txt` just includes it):
+- Probetas de madera y concreto.
+- Conexiones metálicas no rectangulares.
+- Vigas CLT y CLBT.
+- Núcleos de vigas y columnas.
+
+Dos usos: ensayos de laboratorio y sustento académico para la Digital Twins Engineering Conference 2027. Cualquier persona debe poder instalarla.
+
+**Alcance funcional**
+
+- **Ensayos:** tracción, compresión, flexión, cortante/conexiones y momento en pórticos.
+- **Geometría:** arbitraria. Nunca asumir probeta rectangular ni grilla completa de nodos.
+- **Video:** archivo subido, grabación desde el celular con la app y cámara en vivo en el PC.
+- **Carga:** importar el archivo exportado por la máquina (prioridad) y OCR del video para máquinas sin exportación.
+- **Salidas:** mapas de deformación sobre la imagen, curvas carga–desplazamiento y esfuerzo–deformación, módulo de elasticidad y otras propiedades, exportación CSV/PDF/JPG.
+
+Código del dominio DIC, comentarios y mensajes al usuario están en **español**. Mantener esa convención.
+
+## 2. Principios no negociables
+
+1. **Rigor científico.** Nunca usar valores placeholder (como `0.0`) que parezcan datos. Si falta un dato: `null`/`NaN` y una advertencia en el resultado.
+2. **Reproducibilidad.** Cada análisis guarda parámetros (subset, search range, step), calibración, método de lectura de carga, hash del video y versión/commit del software.
+3. **Geometría arbitraria.** Los nodos solo se ubican donde el subset completo cae dentro del objeto. La deformación no depende de una grilla rectangular. Los nodos inválidos se marcan; no se fuerzan al borde.
+4. **Unidades explícitas** (px, mm, N, MPa). La conversión px↔mm vive solo en `dic/probeta.py`.
+5. **Limitación 2D documentada.** Una cámara, objeto en plano perpendicular al eje óptico; el movimiento fuera del plano introduce error. No prometer medición 3D.
+6. **Open source real.** Se instala con `docker compose up` siguiendo el README, sin secretos en el repo, con licencia explícita **[DECIDIR: licencia]**.
+
+## 3. Comandos
+
+Backend (ejecutar desde `backend/` para que resuelvan los imports `app.`; las dependencias están en el `requirements.txt` de la raíz y `backend/requirements.txt` solo lo incluye):
 
 ```sh
 cd backend
 pip install -r ../requirements.txt
-uvicorn app.main:app --reload                      # API at :8000, Swagger at /docs
+uvicorn app.main:app --reload                      # API en :8000, Swagger en /docs
 celery -A app.Core.celery_app.celery_app worker --loglevel=info
-pytest tests -v --tb=short                         # all tests
-pytest tests/test_strain.py::test_name -v          # single test
+pytest tests -v --tb=short                         # todos los tests
+pytest tests/test_strain.py::test_name -v          # un test
 ```
 
-Full stack via Docker (backend, worker, redis, postgres; `backend/app` and `storage/` are bind-mounted, uvicorn reloads):
+Stack completo con Docker (backend, worker, redis, postgres; `backend/app` y `storage/` están montados y uvicorn recarga):
 
 ```sh
 cp .env.example .env
 docker compose up --build
 ```
 
-Frontend (pnpm is enforced by a `preinstall` hook):
+Frontend (**pnpm obligatorio**, forzado por un hook `preinstall`; no usar `npm` ni `npx`, usar `pnpm exec`):
 
 ```sh
 cd frontend
 pnpm install
-pnpm start        # or pnpm android / ios / web
+pnpm start        # o pnpm android / ios / web
 ```
 
-The frontend reads `EXPO_PUBLIC_API_URL` (default `http://localhost:8000/api/v1`); on a physical device point it at the host's LAN IP.
+El frontend lee `EXPO_PUBLIC_API_URL` (por defecto `http://localhost:8000/api/v1`); en un dispositivo físico apuntarlo a la IP LAN del host.
 
-No linter or formatter is configured.
+No hay linter ni formateador configurado.
 
-## Architecture
+## 4. Arquitectura actual del backend (`backend/app`)
 
-### Backend (`backend/app`)
+Capas: `api/v1/routes/*` (routers FastAPI delgados, montados bajo `/api/v1` en `api/v1/router.py`) → `services/*` (lógica de negocio; lanzan subclases de `*ServiceError` que las rutas traducen a HTTP) → `db/models.py` (SQLAlchemy) y `dic/*` (código numérico DIC puro). `schemas/*` contiene los modelos Pydantic.
 
-Layering: `api/v1/routes/*` (thin FastAPI routers, mounted under `/api/v1` in `api/v1/router.py`) → `services/*` (business logic, raise `*ServiceError` subclasses that routes map to HTTP errors) → `db/models.py` (SQLAlchemy) and `dic/*` (pure numerical DIC code). `schemas/*` hold the Pydantic request/response models.
+- `Core/` (con C mayúscula): `config.py` (pydantic-settings, lee `.env`), `security.py` (hash de contraseñas) y `celery_app.py`.
+- El esquema se crea con `Base.metadata.create_all` (`db/init_db.py`). **No hay migraciones**: cambiar un modelo sobre un volumen de Postgres existente exige `ALTER`/borrado manual.
+- `SpecimenConfig` y `TrackingMesh` están indexados por `project_id` (uno por proyecto).
+- Auth (`/auth/register`, `/auth/login`, PBKDF2) existe pero **no emite token** y ningún endpoint está protegido.
 
-- `Core/` (capital C) holds `config.py` (pydantic-settings, reads `.env`), `security.py` (password hashing) and `celery_app.py`.
-- DB schema is created with `Base.metadata.create_all` (`db/init_db.py`) — there are no migrations; model changes on an existing Postgres volume need a manual drop/alter (e.g. the `filas`/`columnas` columns on `tracking_meshes`).
-- `SpecimenConfig` and `TrackingMesh` are keyed by `project_id` (one per project).
-- Auth (`/auth/register`, `/auth/login`, PBKDF2) exists but issues no token; no endpoint is protected yet.
+**Flujo de análisis** (pantallas → rutas → worker):
 
-**Analysis flow** (the core of the app, spans frontend screens → routes → worker):
-1. Project created → specimen calibrated (`/specimen`, px↔mm via `dic/probeta.py`) → tracking mesh built from a user-drawn polygon (`/tracking/mesh`). The mesh is a `filas × columnas` grid (default 3×3, 2–20 each, chosen in `MeshScreen`), nodes stored **row-major** in `TrackingMesh.nodos`.
-2. `POST /analysis/start` validates both exist, inserts an `Analysis` row whose id doubles as the Celery `task_id`, and enqueues `workers/tasks.process_full_analysis` (params: `subset_size` default 32, `search_range` default 20, `frame_inicio`/`frame_fin`).
-3. The worker opens the video source via `DeviceService.open_capture_for_source_id` (numeric id = camera, otherwise a file path), and compares every frame against the **first (reference) frame** with `dic/pipeline.procesar_par_frames`: ZNCC correlation (Numba) + LSQ subpixel refinement (`correlation.py`, `displacement.py`) → strain per grid cell, `(filas-1) × (columnas-1)` cells (`strain.calcular_deformaciones`). Displacement is reported from the central node (`ResultadoFrame.nodo_centro`). Frames where tracking raises `ValueError` are skipped. Results accumulate in `dic/analisis.Analisis`; progress is reported via `update_state(state="PROGRESS", meta={...})`.
-4. Output: strain maps (`dic/mapas.py`) written to `storage/analyses/<id>/` (served at `/storage` by `StaticFiles`) and a `Result` row with JSON curves. `/analysis/status/{id}` reads Celery state; `/analysis/results/{id}` reads the DB.
-- Load (`carga_n`) is read per frame by OCR (`dic/ocr.extract_load_value`, pytesseract) when the specimen has a `roi_carga`; otherwise, or when OCR fails, it falls back to `CARGA_N_PLACEHOLDER = 0.0`. The Setup screen currently always sends `roi_carga: null`, so in practice load and stress are 0.
+1. Proyecto → calibración de probeta (`/specimen`, px↔mm vía `dic/probeta.py`) → malla de rastreo desde un polígono dibujado (`/tracking/mesh`). La malla es una grilla `filas × columnas` (por defecto 3×3, 2–20 cada una, elegida en `MeshScreen`), con nodos guardados **por filas** en `TrackingMesh.nodos`.
+2. `POST /analysis/start` valida que existan calibración y malla, inserta una fila `Analysis` cuyo id es también el `task_id` de Celery y encola `workers/tasks.process_full_analysis` (`subset_size` 32, `search_range` 20, `frame_inicio`/`frame_fin`).
+3. El worker abre la fuente con `DeviceService.open_capture_for_source_id` (id numérico = cámara; si no, ruta de archivo) y compara cada frame contra el **primer frame (referencia)** con `dic/pipeline.procesar_par_frames`: ZNCC con Numba + refinamiento subpíxel por mínimos cuadrados (`correlation.py`, `displacement.py`) → deformación por celda `(filas-1) × (columnas-1)` (`strain.calcular_deformaciones`). El desplazamiento se reporta desde el nodo central (`ResultadoFrame.nodo_centro`). Los frames donde el rastreo lanza `ValueError` se omiten.
+4. Salida: mapas en `storage/analyses/<id>/` (servidos en `/storage`) y una fila `Result` con curvas JSON.
+5. Carga (`carga_n`): OCR por frame (`dic/ocr.extract_load_value`, pytesseract) si la calibración tiene `roi_carga`; si no hay ROI o el OCR falla, cae en `CARGA_N_PLACEHOLDER = 0.0`. **Esto viola el principio 1 y está en el plan para corregirse.** La pantalla Setup hoy envía siempre `roi_carga: null`, así que en la práctica carga y esfuerzo son 0.
 
-Gotchas:
-- Node distribution over the polygon mask is implemented twice: `services/tracking.TrackingService._distribute_nodes` (used by the API) and `dic/rastreo.Rastreo._distribuir_nodos` (library code). Keep them in sync when changing mesh logic.
-- Anything that indexes nodes (strain cells, central node) must take `filas`/`columnas` into account — don't hardcode 9 nodes.
-- `plan.md` / `todo.md` (Spanish) track phases and pending work; check them for context on planned features.
+**Cuidados al editar**
+
+- La distribución de nodos está implementada **dos veces**: `services/tracking.TrackingService._distribute_nodes` (la usa la API) y `dic/rastreo.Rastreo._distribuir_nodos` (biblioteca). Mantenerlas sincronizadas o, mejor, eliminar una.
+- Todo lo que indexe nodos (celdas de deformación, nodo central) debe usar `filas`/`columnas`; no fijar 9 nodos.
+- `DeviceService` usa `cv2.CAP_DSHOW` para cámaras, que solo existe en Windows. En Linux/Docker no funciona; los archivos usan `CAP_ANY`.
+- `source_id` de tipo archivo acepta hoy cualquier ruta del servidor (riesgo de seguridad pendiente).
+- `plan.md` y `todo.md` registran fases y pendientes; consultarlos antes de empezar una tarea.
 
 ### Tests
 
-`tests/conftest.py` sets env vars before importing the app: SQLite in-memory DB, in-memory Celery broker, and `task_always_eager=True`, so tasks run synchronously in-process. No Postgres/Redis needed for tests. `test_ocr.py` skips its real-Tesseract test when the binary isn't installed (the Docker image includes it).
+`tests/conftest.py` fija variables de entorno antes de importar la app: SQLite en memoria, broker de Celery en memoria y `task_always_eager=True`, de modo que las tareas corren de forma síncrona. No hace falta Postgres ni Redis. `test_ocr.py` omite el test real de Tesseract si el binario no está (la imagen Docker lo incluye).
 
-### Frontend (`frontend/src`)
+## 5. Arquitectura objetivo del backend
 
-- `api/client.js` `apiRequest` is the single fetch wrapper (JSON, maps errors to `ApiError` / `NotFoundError` using the backend's `detail`); per-domain modules in `api/` wrap it — add new endpoints there.
-- Navigation: native-stack in `navigation/AppNavigator.js`, route names in `navigation/routes.js`. Each screen lives in `screens/<name>/` with an `index.js` re-export.
-- Shared styles in `styles/theme.js`.
+- **Estrategia por tipo de ensayo** (`dic/ensayos/`): interfaz común que, para tracción, compresión, flexión, cortante y pórtico, define cómo se calcula el esfuerzo, qué mide el extensómetro virtual y cómo se obtiene el módulo. Un ensayo nuevo no debe tocar el pipeline DIC.
+- **Extensómetros virtuales:** longitud de calibración entre dos puntos (tracción/compresión), deflexión (flexión), deslizamiento relativo (conexiones), rotación (pórticos).
+- **Fuentes de carga** (`cargas/`): importador CSV/XLSX con mapeo de columnas y unidades; OCR con ROI que cuenta y reporta fallos; sincronización temporal con los frames (offset, evento de inicio, interpolación a los tiempos de frame).
+- **Módulo de elasticidad:** ajuste lineal sobre un rango que el usuario elige según la norma aplicable; se reporta el rango y el R². Nunca elegir el rango en silencio **[DECIDIR: normas por material]**.
+- **Geometría arbitraria:** nodos válidos dentro de una máscara erosionada por la mitad del subset; deformación por triangulación (elementos de deformación constante) o ventana local; mapas dibujados sobre el primer frame.
+- **Subida de video:** endpoint con límite de tamaño y validación de extensión; el `source_id` de archivo apunta a `storage/uploads/` y nunca a rutas arbitrarias.
+- **Datos:** Alembic para migraciones; `owner_id` en `Project`; JWT en todos los endpoints.
+
+## 6. Frontend (`frontend/src`) y diseño atómico
+
+### Estado actual
+
+- `api/client.js`: `apiRequest` es el único wrapper de `fetch` (JSON; traduce errores a `ApiError` / `NotFoundError` con el `detail` del backend). Un módulo por dominio en `api/`; los endpoints nuevos se agregan ahí.
+- Navegación: native-stack en `navigation/AppNavigator.js`; nombres de ruta en `navigation/routes.js`. Cada pantalla vive en `screens/<nombre>/` con un `index.js` que la reexporta.
+- Estilos compartidos en `styles/theme.js`.
+
+### Estructura objetivo (Atomic Design)
+
+```
+frontend/src/
+  components/
+    atoms/        Button, TextField, Typography, Label, Icon, Badge, Spinner, Divider
+    molecules/    FormField, SegmentedControl, MetricCard, ProgressBar, InlineMessage,
+                  KeyValueRow, ImageWithCaption
+    organisms/    LoginForm, RegisterForm, ProjectList, SpecimenForm, VideoSourcePicker,
+                  FrameAnnotator, MeshParametersPanel, AnalysisProgressPanel,
+                  ResultsSummary, CurveChart, StrainMapGallery, ExportPanel
+    templates/    AuthTemplate, ScreenTemplate, WizardTemplate
+  screens/        páginas: Login, Registro, Proyectos, Setup, Captura, Malla,
+                  Resultados, Reportes, Manual
+  hooks/          useAnalysisStatus, useFirstFrame, ...
+  api/  navigation/  styles/
+```
+
+Cada componente vive en su carpeta (`Button/Button.js`, `Button/index.js`, `Button/Button.test.js`), igual que las pantallas.
+
+**Reglas**
+
+1. **Dirección de imports:** `atoms ← molecules ← organisms ← templates ← screens`. Un nivel solo importa de los inferiores, nunca de los superiores ni de su mismo nivel (salvo molecules entre sí si no hay ciclo y se justifica).
+2. **Átomos y moléculas son puros:** reciben props, no tienen estado de negocio, no llaman a `api/` ni a `navigation`.
+3. **Organismos** pueden tener estado local de UI y exponen callbacks (`onSubmit`, `onChange`); no llaman a `api/`.
+4. **Solo las pantallas (páginas)** llaman a `api/*`, usan `navigation` y hooks de datos, y pasan datos y callbacks hacia abajo.
+5. **Templates** solo resuelven layout (encabezado, área desplazable, barra de acción, indicador de pasos); no contienen datos.
+6. **Tokens de diseño:** `styles/theme.js` define `colors`, `spacing`, `typography` y `radii`. Los componentes usan solo tokens; sin colores ni tamaños literales.
+7. **Accesibilidad:** `accessibilityLabel` en átomos interactivos, áreas táctiles de al menos 44 pt, contraste suficiente.
+8. **Textos de usuario** en un solo lugar (`src/i18n/es.js`) para facilitar una futura traducción **[DECIDIR: ¿i18n en la app?]**.
+9. **Dependencias:** no agregar librerías de UI. Antes de añadir una de gráficas, evaluar `react-native-svg` y dibujar `CurveChart` propio. Cualquier dependencia nueva se instala con pnpm y se justifica.
+
+**Organismo clave: `FrameAnnotator`.** Muestra un frame y permite marcar sobre él en distintos modos:
+
+- `line` — dos toques: mide `long_calibracion_px`.
+- `rect` — rectángulo: ROI de la carga para el OCR.
+- `polygon` — vértices: región de interés y malla.
+
+Un solo organismo reemplaza tres pendientes del `todo.md` (calibración medida, ROI de carga y polígono de malla). Debe aceptar frames de cualquier resolución y devolver coordenadas en píxeles del frame original.
+
+**Migración:** no reescribir todo de golpe. Una pantalla por PR, empezando por Login (la más pequeña), y la pantalla debe seguir funcionando al terminar. Primero tokens + átomos + moléculas; después organismos; por último templates.
+
+**Tests de frontend:** átomos y moléculas con tests de render (jest-expo + Testing Library), instalados con pnpm. Hoy no hay ningún test de frontend.
+
+## 7. Reglas de trabajo para el agente
+
+- Cambios pequeños y verificables; correr `pytest` antes de dar una tarea por terminada.
+- No duplicar lógica: antes de construir sobre `dic/` vs `services/` (dispositivos, rastreo, análisis), eliminar la duplicación existente.
+- No commitear `__pycache__`, `.expo/`, `.env`, videos de prueba ni el contenido de `storage/`.
+- Toda función DIC nueva lleva un test con datos sintéticos de desplazamiento conocido.
+- No marcar una tarea como hecha si queda un `NotImplementedError`, un stub o un placeholder en su camino.
+- **Preguntar antes de:** cambiar el algoritmo de correlación, el formato de resultados, el esquema de la base de datos, o agregar dependencias (revisar su licencia).
+- Cambios de esquema: con migración Alembic una vez exista; mientras tanto, documentar el `ALTER` necesario.
+
+## 8. Validación (requisito para publicar)
+
+- Carpeta `validation/` con scripts reproducibles.
+- Imágenes sintéticas con desplazamiento y deformación conocidos (traslación rígida, estiramiento uniforme, gradiente): reportar error medio y desviación.
+- Comparación contra extensómetro, LVDT o galga en ensayos reales.
+- Documentar la resolución de deformación alcanzada según la calidad del patrón speckle.
+
+## 9. Definición de "terminado"
+
+- Los tests pasan y hay tests nuevos para lo agregado.
+- Sin placeholders ni stubs en el flujo afectado.
+- Migración incluida si cambió el esquema.
+- Componentes de UI colocados en su nivel atómico correcto.
+- README, `todo.md` y `plan.md` actualizados.
