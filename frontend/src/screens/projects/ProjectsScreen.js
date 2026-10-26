@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 
+import { logout } from '../../api/auth';
 import { createProject, deleteProject, listProjects } from '../../api/projects';
 import { ROUTES } from '../../navigation/routes';
 
@@ -18,6 +19,8 @@ const STATUS_LABELS = {
   pending: 'Pendiente',
   in_progress: 'En progreso',
   completed: 'Completado',
+  failed: 'Fallo el analisis',
+  revoked: 'Analisis cancelado',
 };
 
 function formatDate(isoString) {
@@ -69,6 +72,11 @@ export default function ProjectsScreen() {
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigation.reset({ index: 0, routes: [{ name: ROUTES.LOGIN }] });
   };
 
   const handleDelete = (project) => {
@@ -145,17 +153,19 @@ export default function ProjectsScreen() {
             <View style={styles.cardActions}>
               <TouchableOpacity
                 style={styles.cardAction}
-                onPress={() => navigation.navigate(ROUTES.SETUP, { projectId: project.id, projectName: project.name })}
-              >
-                <Text style={styles.cardActionText}>Calibrar probeta</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cardAction}
                 onPress={() =>
                   navigation.navigate(ROUTES.VIDEO_CAPTURE, { projectId: project.id, projectName: project.name })
                 }
+                accessibilityRole="button"
               >
-                <Text style={styles.cardActionText}>Capturar video</Text>
+                <Text style={styles.cardActionText}>Nuevo analisis</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cardAction}
+                onPress={() => navigation.navigate(ROUTES.REPORTS, { projectId: project.id, projectName: project.name })}
+                accessibilityRole="button"
+              >
+                <Text style={styles.cardActionText}>Historial y reportes</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -163,11 +173,11 @@ export default function ProjectsScreen() {
       )}
 
       <View style={styles.quickLinks}>
-        <TouchableOpacity style={styles.quickLink} onPress={() => navigation.navigate(ROUTES.REPORTS)}>
-          <Text style={styles.quickLinkText}>Reportes</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.quickLink} onPress={() => navigation.navigate(ROUTES.USER_MANUAL)}>
           <Text style={styles.quickLinkText}>Manual</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.quickLink} onPress={handleLogout} accessibilityRole="button">
+          <Text style={styles.quickLinkText}>Cerrar sesion</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -290,7 +300,7 @@ const styles = StyleSheet.create({
   cardAction: {
     flex: 1,
     marginRight: 8,
-    height: 38,
+    height: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
@@ -309,7 +319,7 @@ const styles = StyleSheet.create({
   quickLink: {
     flex: 1,
     marginHorizontal: 4,
-    height: 40,
+    height: 44,
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',

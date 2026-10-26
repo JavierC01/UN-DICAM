@@ -15,3 +15,11 @@ export function buildMesh(payload) {
     fallbackMessage: 'No fue posible construir la malla de rastreo.',
   });
 }
+
+export function setTestPoints(projectId, puntos) {
+  return apiRequest(`/tracking/${projectId}/puntos-ensayo`, {
+    method: 'PUT',
+    body: { puntos },
+    fallbackMessage: 'No fue posible guardar los puntos del ensayo.',
+  });
+}

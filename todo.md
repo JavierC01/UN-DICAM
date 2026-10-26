@@ -1,6 +1,6 @@
 # TODO — UN-DICAM
 
-Estado al 2026-10-25. Contexto y prioridades en [plan.md](plan.md); reglas para agentes en [CLAUDE.md](CLAUDE.md).
+Estado al 2026-10-26. Contexto y prioridades en [plan.md](plan.md); reglas para agentes en [CLAUDE.md](CLAUDE.md).
 
 Leyenda: `[x]` completada · `[~]` parcialmente completada · `[ ]` pendiente · **[DECIDIR]** requiere decisión del autor
 
@@ -14,7 +14,7 @@ Leyenda: `[x]` completada · `[~]` parcialmente completada · `[ ]` pendiente ·
 - [x] Configuración por `.env`, CORS y montaje de `/storage`
 - [x] Endpoints `/` y `/health`
 - [x] Creación de tablas al arrancar y espera a la base de datos
-- [x] Suite de tests backend (23 pasan, 1 se omite sin Tesseract local)
+- [x] Suite de tests backend (68 pasan, 1 se omite sin Tesseract local)
 - [x] `CLAUDE.md` con guía para agentes de codificación
 
 ### Cuentas y proyectos
@@ -45,99 +45,82 @@ Leyenda: `[x]` completada · `[~]` parcialmente completada · `[ ]` pendiente ·
 
 ---
 
+### Completadas el 2026-10-26 (tareas parciales y Fase 7)
+
+**Antes parciales**
+- [x] OCR: un fallo de lectura ya no vale `0.0`; el punto queda nulo, se cuenta (`carga.fallos_ocr`) y se advierte
+- [x] ROI de carga dibujada sobre el frame (`FrameAnnotator`, modo `rect`) y enviada en `/specimen/configure` (Captura ahora va antes que Configuración)
+- [x] JWT (HS256 con la biblioteca estándar) emitido en `/auth/login` y exigido en todos los endpoints salvo `/auth`; token guardado con `expo-secure-store` (localStorage en web), enviado por `apiRequest`, cierre de sesión y regreso al login ante un 401
+- [x] `long_calibracion_px` medido con dos toques (`FrameAnnotator`, modo `line`)
+- [x] `POST /devices/upload` (extensión validada, límite `MAX_UPLOAD_MB`, verificación de que el archivo es un video legible) y UI con `expo-document-picker`
+- [x] Cámaras: `CAP_DSHOW` en Windows, `CAP_V4L2` en Linux, `CAP_ANY` en otros
+- [x] Grabación desde el celular con `expo-camera` y subida del video
+- [x] Resultados: gráficas propias con `react-native-svg` (`CurveChart`), mapas con el host antepuesto, advertencias, información de carga; quitado el bloque de 501
+- [x] `step_size` eliminado del request (no tenía efecto): el paso de nodos lo fija la malla `filas × columnas` y se guarda como `paso_nodos_px` en los metadatos
+- [x] Estados: `Analysis` pasa a `running`; si falla, `Project` queda `failed`; si se cancela, `revoked`; etiquetas en Proyectos
+- [x] WebSocket `/analysis/ws/{task_id}` eliminado (era un stub; la app usa sondeo)
+- [x] Manual de usuario con el flujo real
+- [x] Pantalla de Reportes: historial por proyecto y descarga CSV/PDF/JPG
+
+**Fase 7 y relacionadas**
+- [x] Nodos válidos solo donde el subset completo cae dentro de la forma (máscara erosionada); inválidos marcados en `MeshResponse.validos` y `TrackingMesh.validos`, sin forzarlos al borde
+- [x] `calcular_deformaciones` (grilla): celda `NaN` si alguna esquina es inválida; medias sin los `NaN`
+- [x] Deformación por triangulación de Delaunay con elementos CST (`deformacion_triangulos`), sin triángulos que crucen huecos
+- [x] Nodo central = nodo válido más cercano al centroide del polígono
+- [x] Mapas dibujados sobre el primer frame (`tripcolor`, triángulos sin dato transparentes)
+- [x] Distribución de nodos unificada en `dic/rastreo.py`; borrados `dic/dispositivos.py`, `dic/analisis.py`, `services/analysis.py` y el modelo `ImagePair`
+- [x] Tests con hueso de perro, entalla y forma en L (geometría, triangulación, CST y estiramiento sintético rastreado)
+- [x] Interfaz `Ensayo` en `dic/ensayos/` con tracción, compresión (extensómetro entre dos puntos), flexión (deflexión relativa a los apoyos), cortante (deslizamiento relativo) y pórtico (rotación y momento con brazo)
+- [x] Propiedad por ajuste lineal en el rango que elige el usuario (`POST /analysis/{id}/propiedad`, rango en x o fracción de la respuesta máxima), con rango, pendiente y R²
+- [x] Selector de tipo de ensayo y parámetros en Configuración; puntos del extensómetro sobre la malla (`PUT /tracking/{id}/puntos-ensayo`, validados dentro de la triangulación)
+- [x] Importador CSV/XLSX (`openpyxl`) con mapeo de columnas y unidades (N, kN, kgf, tf, lbf; s, ms, min)
+- [x] Sincronización carga↔frames: offset, evento de inicio por umbral de carga e interpolación a los tiempos de frame
+- [x] Fuente de carga por proyecto: archivo, OCR o ninguna; el resultado reporta interpolados, descartados y fallos
+- [x] `export_results` reemplazado por `exportar_csv/jpg/pdf`; endpoints `/export/csv|jpg|pdf/{id}` con metadatos de reproducibilidad
+- [x] `GET /projects/{id}/analyses` (historial)
+- [x] Ejes de `curva_desplaz_carga` corregidos: `x` = desplazamiento, `y` = carga
+- [x] `source_id` de archivo restringido a nombres dentro de `storage/uploads/`
+
+---
+
 ## 🟡 Parcialmente completadas
 
-- [~] **Lectura de carga por OCR** — implementada en [ocr.py](backend/app/dic/ocr.py), integrada en la tarea y con tests, pero:
-  - [ ] Verificar con `git status` que `ocr.py`, `RoiCarga`, `specimen.py`, `tasks.py` y `test_ocr.py` estén commiteados
-  - [ ] Ejecutar el test real de Tesseract (instalar Tesseract en Windows o correr tests en Docker)
-  - [ ] No usar `0.0` cuando el OCR falla en un frame: descartar o interpolar el punto y contar fallos
-- [~] **ROI de carga** — el backend la acepta y la usa, pero Setup siempre envía `roi_carga: null`
-  - [ ] Dibujar el rectángulo sobre el primer frame con `FrameAnnotator` (modo `rect`)
-  - [ ] Enviar la ROI en `/specimen/configure` (o un endpoint aparte, porque Setup ocurre antes de tener frame)
-- [~] **Autenticación** — registro y login funcionan, pero no hay sesión
-  - [ ] Emitir JWT en el login y validarlo en los endpoints
-  - [ ] Guardar el token en el frontend y enviarlo en `apiRequest`
-  - [ ] Cerrar sesión
-- [~] **Calibración** — funciona, pero `long_calibracion_px` se escribe a mano
-  - [ ] Medirlo con dos toques sobre el frame (`FrameAnnotator`, modo `line`)
-- [~] **Fuente de video**
-  - [ ] Endpoint de subida de video (`python-multipart` ya instalado) y UI para elegir archivo
-  - [ ] Resolver cámaras: `CAP_DSHOW` solo funciona en Windows nativo; en Linux usar `CAP_V4L2` o grabar desde el móvil
-  - [ ] Grabación desde el celular con `expo-camera` (instalado, sin usar) y subida del video
-- [~] **Pantalla de Resultados** — muestra estado y métricas, pero no curvas ni mapas
-  - [ ] Gráfica carga–desplazamiento
-  - [ ] Gráfica esfuerzo–deformación
-  - [ ] Mostrar mapas εxx, εyy, εxy (anteponer el host a las URLs `/storage/...`)
-  - [ ] Quitar el bloque obsoleto de "resultados pendientes" (manejo de 501)
-- [~] **Parámetros de análisis** — `step_size` se envía pero el backend lo ignora
-- [~] **Estados de análisis y proyecto**
-  - [ ] Marcar `Analysis` como `running` al empezar
-  - [ ] Actualizar el `Project` cuando el análisis falla o se cancela (hoy se queda en `in_progress`)
-  - [ ] Agregar etiquetas `failed`/`revoked` en la pantalla de Proyectos
-- [~] **WebSocket de progreso** — `/analysis/ws/{task_id}` solo responde "connected"; implementar o eliminar
-- [~] **Manual de usuario** — la pantalla existe con texto de ejemplo; escribir el contenido real
-- [~] **Pantalla de Reportes** — existe pero el botón no hace nada
+- [~] **Lectura de carga por OCR**
+  - [ ] Ejecutar el test real de Tesseract en Docker (`docker compose run --rm backend pytest tests/test_ocr.py`); en el entorno de desarrollo no estaban ni Tesseract ni el daemon de Docker
+- [~] **Frontend sin verificar en dispositivo:** la sintaxis y los imports se revisaron, pero `pnpm install` lo bloqueó la política de cadena de suministro de pnpm (`semver@6.3.1`, *trust downgrade*); falta instalar las dependencias nuevas (`react-native-svg`, `expo-document-picker`, `expo-secure-store`) y probar el flujo en Android/iOS/web
 
 ---
 
 ## 🔴 Pendientes
 
-### Geometría arbitraria (Fase 7)
-- [ ] Nodos válidos solo donde el subset completo cae dentro de la forma (máscara erosionada por `subset_size // 2`); marcar los inválidos en el esquema y la base de datos
-- [ ] `calcular_deformaciones`: calcular una celda solo si sus 4 esquinas son válidas (resto `NaN`); mapas con `masked_invalid`
-- [ ] Deformación sin grilla: triangulación (Delaunay) con elementos de deformación constante, o ventana local
-- [ ] Nodo central = nodo válido más cercano al centroide del polígono
-- [ ] Mapas de deformación dibujados sobre el primer frame
-- [ ] Unificar la distribución de nodos (hoy en `services/tracking.py` y `dic/rastreo.py`)
-- [ ] Tests con formas no rectangulares (hueso de perro, entalla, forma en L)
-- [ ] (Opcional) Segmentación automática de la forma (`grabCut`/Otsu) para no marcar vértices a mano
-
-### Tipos de ensayo y propiedades (Fase 7)
-- [ ] Interfaz `Ensayo` en `dic/ensayos/`: esfuerzo, extensómetro virtual y módulo por tipo
-- [ ] Tracción y compresión: extensómetro entre dos puntos y módulo de elasticidad con rango elegido por el usuario (reportar rango y R²)
-- [ ] Flexión (vigas, CLT/CLBT): deflexión
-- [ ] Cortante y conexiones metálicas: deslizamiento relativo
-- [ ] Momento en pórticos: rotación
-- [ ] Definir las normas aplicables por material **[DECIDIR]**
-- [ ] Selector de tipo de ensayo en la configuración del proyecto
-
-### Carga desde la máquina (Fase 7)
-- [ ] Importador CSV/XLSX con mapeo de columnas y unidades
-- [ ] Sincronización temporal carga↔frames (offset, evento de inicio, interpolación a tiempos de frame)
-- [ ] Elegir la fuente de carga por proyecto: archivo de la máquina u OCR
-- [ ] Reportar en el resultado cuántos puntos se interpolaron o se descartaron
+### Fase 7 (opcional)
+- [ ] Segmentación automática de la forma (`grabCut`/Otsu) para no marcar vértices a mano
+- [ ] Definir las normas aplicables por material **[DECIDIR]** (hoy el usuario escribe el rango del ajuste)
+- [ ] Módulo de elasticidad a flexión (E global con luz e inercia), además de la rigidez
 
 ### Resultados y exportación
-- [ ] Implementar `export_results` en [export.py](backend/app/dic/export.py)
-- [ ] `GET /export/csv/{analysis_id}` (curvas y métricas; `pandas` ya instalado)
-- [ ] `GET /export/jpg/{analysis_id}` (mapas y gráficas)
-- [ ] `GET /export/pdf/{analysis_id}` (reporte técnico; `reportlab` ya instalado)
-- [ ] Incluir metadatos de reproducibilidad en cada exportación (parámetros, calibración, método de carga, hash del video, versión/commit)
-- [ ] `GET /projects/{id}/analyses` para listar el historial de análisis
-- [ ] Conectar la pantalla de Reportes: elegir análisis y descargar/compartir CSV, PDF, JPG
-- [ ] Verificar ejes de `curva_desplaz_carga` (hoy `x = carga`, `y = desplazamiento`)
+- [ ] Mapas de deformación de cualquier frame (hoy solo el último)
+- [ ] Compartir el archivo desde la app en lugar de abrirlo en el navegador
 
 ### Datos y backend
 - [ ] Agregar `owner_id` a `Project` y filtrar proyectos por usuario
 - [ ] `GET /tracking/{project_id}` para recuperar la malla guardada
-- [ ] Migraciones con Alembic
+- [ ] Migraciones con Alembic (mientras tanto, los `ALTER` están en el README)
 - [ ] Rastreo incremental (actualizar la imagen de referencia) para deformaciones grandes
-- [ ] Eliminar duplicados entre `app/dic/` y `app/services/` (dispositivos/devices, rastreo/tracking, analisis/analysis)
-- [ ] Eliminar o usar el modelo `ImagePair`
 
 ### Seguridad
-- [ ] Proteger todos los endpoints con autenticación
 - [ ] Restringir `CORS_ORIGINS`
-- [ ] Validar rutas de archivo en `source_id` (hoy se puede abrir cualquier ruta del servidor); los videos subidos viven en `storage/uploads/`
-- [ ] Límite de tamaño y validación de extensión en la subida de video
+- [ ] Descargas con enlaces firmados de un solo uso en lugar de `?token=`; `/storage` hoy es público
+- [ ] El límite de subida se aplica al escribir el archivo, después de que el servidor recibió el cuerpo: limitarlo también en el proxy
 - [ ] Validaciones de formulario en el frontend (correo, longitud de contraseña)
 
 ### Diseño atómico del frontend (Fase 8)
-- [ ] **Tokens:** ampliar `styles/theme.js` con `colors`, `spacing`, `typography`, `radii`; eliminar colores y tamaños literales
+- [~] **Tokens:** `styles/theme.js` ya tiene `colors`, `spacing`, `typography`, `radii` y `touchTarget`; las pantallas reescritas los usan, faltan Login, Registro y Proyectos
 - [ ] **Átomos:** Button, TextField, Typography, Label, Icon, Badge, Spinner, Divider (cada uno en `components/atoms/<Nombre>/`)
 - [ ] **Moléculas:** FormField, SegmentedControl, MetricCard, ProgressBar, InlineMessage, KeyValueRow, ImageWithCaption
-- [ ] **Organismo `FrameAnnotator`** con modos `line` (calibración), `rect` (ROI de carga) y `polygon` (malla); coordenadas devueltas en píxeles del frame original
-- [ ] **Otros organismos:** LoginForm, RegisterForm, ProjectList, SpecimenForm, VideoSourcePicker, MeshParametersPanel, AnalysisProgressPanel, ResultsSummary, CurveChart (evaluar `react-native-svg` antes de añadir una librería de gráficas), StrainMapGallery, ExportPanel
+- [x] **Organismo `FrameAnnotator`** con modos `line` (calibración), `rect` (ROI de carga), `polygon` (malla) y `points` (extensómetro); coordenadas en píxeles del frame original
+- [x] **`CurveChart`** propio con `react-native-svg` y molécula **`SegmentedControl`**
+- [ ] **Otros organismos:** LoginForm, RegisterForm, ProjectList, SpecimenForm, VideoSourcePicker, MeshParametersPanel, AnalysisProgressPanel, ResultsSummary, StrainMapGallery, ExportPanel
 - [ ] **Templates:** AuthTemplate, ScreenTemplate, WizardTemplate (indicador de pasos Setup → Captura → Malla → Resultados)
 - [ ] **Migrar pantallas, una por PR:** Login → Registro → Proyectos → Setup → Captura → Malla → Resultados → Reportes → Manual
 - [ ] Hooks de datos (`useAnalysisStatus`, `useFirstFrame`) para que las pantallas queden como páginas delgadas
@@ -146,7 +129,7 @@ Leyenda: `[x]` completada · `[~]` parcialmente completada · `[ ]` pendiente ·
 - [ ] Textos de usuario centralizados en `src/i18n/es.js` **[DECIDIR: ¿traducir la app?]**
 
 ### Calidad, open source y validación
-- [ ] Tests de rutas: auth, proyectos, export
+- [~] Tests de rutas: auth, export, cargas, malla y análisis cubiertos; faltan CRUD de proyectos
 - [ ] Tests del frontend (jest-expo + Testing Library, instalados con pnpm), empezando por átomos y moléculas
 - [ ] Carpeta `validation/` con imágenes sintéticas de desplazamiento conocido (traslación rígida, estiramiento uniforme, gradiente) y reporte de error medio y desviación
 - [ ] Validar contra extensómetro/LVDT/galga en ensayos reales
@@ -156,4 +139,4 @@ Leyenda: `[x]` completada · `[~]` parcialmente completada · `[ ]` pendiente ·
 - [ ] Integración continua con pytest
 - [ ] Atribución de código de terceros (revisar licencias de dependencias y de cualquier código reutilizado)
 - [ ] Quitar del repo `backend/__pycache__/`, `.expo/`, `frontend/.expo/` y `backend/package.json`
-- [ ] README: flujo completo, `EXPO_PUBLIC_API_URL`, cómo correr el worker sin Docker
+- [x] README: flujo completo, `SECRET_KEY`, `ALTER` de esquema, cómo correr el worker sin Docker

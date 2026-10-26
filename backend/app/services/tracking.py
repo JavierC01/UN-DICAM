@@ -1,6 +1,6 @@
-import cv2
-import numpy as np
-
+from app.dic import rastreo
+from app.dic.ensayos import obtener_ensayo
+from app.dic.strain import localizar_punto
 from app.schemas.common import Point
 from app.schemas.tracking import MeshRequest, MeshResponse, TrackingValidationResponse
 
@@ -9,9 +9,13 @@ class TrackingServiceError(RuntimeError):
     pass
 
 
+def _dicts(puntos: list[Point]) -> list[dict[str, float]]:
+    return [p.model_dump() for p in puntos]
+
+
 class TrackingService:
     def validate(self, payload: MeshRequest) -> TrackingValidationResponse:
-        area = self._polygon_area(payload.puntos)
+        area = rastreo.area_poligono(_dicts(payload.puntos))
         min_area = payload.frame_width * payload.frame_height * 0.005
         valid = len(payload.puntos) >= 3 and area >= min_area
         message = "Poligono valido" if valid else "El poligono debe tener minimo 3 puntos y cubrir mas area"
@@ -21,47 +25,46 @@ class TrackingService:
         validation = self.validate(payload)
         if not validation.valid:
             raise TrackingServiceError(validation.message)
-        mask = self._build_mask(payload.frame_width, payload.frame_height, payload.puntos)
-        nodes = self._distribute_nodes(mask, payload.filas, payload.columnas)
+        try:
+            malla = rastreo.construir_malla(
+                payload.frame_width,
+                payload.frame_height,
+                _dicts(payload.puntos),
+                payload.filas,
+                payload.columnas,
+                payload.subset_size,
+            )
+        except ValueError as exc:
+            raise TrackingServiceError(str(exc)) from exc
         return MeshResponse(
-            nodos=nodes,
+            nodos=[Point(**n) for n in malla.nodos],
+            validos=malla.validos,
             poligono=payload.puntos,
             area_px=validation.area_px,
             filas=payload.filas,
             columnas=payload.columnas,
+            subset_size=payload.subset_size,
         )
 
-    def _build_mask(self, width: int, height: int, points: list[Point]) -> np.ndarray:
-        polygon = np.array([[(int(p.x), int(p.y)) for p in points]], dtype=np.int32)
-        mask = np.zeros((height, width), dtype=np.uint8)
-        cv2.fillPoly(mask, polygon, 255)
-        return mask
-
-    def _distribute_nodes(self, mask: np.ndarray, filas: int, columnas: int) -> list[Point]:
-        ys, xs = np.where(mask > 0)
-        if len(xs) == 0:
-            raise TrackingServiceError("La mascara del poligono esta vacia")
-
-        x_values = np.linspace(xs.min(), xs.max(), columnas)
-        y_values = np.linspace(ys.min(), ys.max(), filas)
-        nodes: list[Point] = []
-
-        for y in y_values:
-            for x in x_values:
-                node_x, node_y = self._nearest_mask_pixel(mask, int(round(x)), int(round(y)))
-                nodes.append(Point(x=float(node_x), y=float(node_y)))
-        return nodes
-
-    def _nearest_mask_pixel(self, mask: np.ndarray, x: int, y: int) -> tuple[int, int]:
-        if 0 <= y < mask.shape[0] and 0 <= x < mask.shape[1] and mask[y, x] > 0:
-            return x, y
-
-        ys, xs = np.where(mask > 0)
-        distance = (xs - x) ** 2 + (ys - y) ** 2
-        idx = int(np.argmin(distance))
-        return int(xs[idx]), int(ys[idx])
-
-    def _polygon_area(self, points: list[Point]) -> float:
-        x = np.array([p.x for p in points])
-        y = np.array([p.y for p in points])
-        return float(0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+    def validate_test_points(
+        self,
+        tipo_ensayo: str,
+        puntos: list[Point],
+        nodos: list[dict],
+        validos: list[bool] | None,
+        poligono: list[dict],
+        ancho: int,
+        alto: int,
+    ) -> None:
+        """Los puntos del extensometro virtual deben caer dentro de la malla triangulada para poder interpolarlos."""
+        try:
+            obtener_ensayo(tipo_ensayo).validar_puntos(_dicts(puntos))
+        except ValueError as exc:
+            raise TrackingServiceError(str(exc)) from exc
+        mascara = rastreo.generar_mascara(ancho, alto, poligono)
+        triangulos = rastreo.triangular(nodos, validos or [True] * len(nodos), mascara)
+        fuera = [i + 1 for i, p in enumerate(puntos) if localizar_punto(p.model_dump(), nodos, triangulos) is None]
+        if fuera:
+            raise TrackingServiceError(
+                f"Los puntos {', '.join(map(str, fuera))} quedan fuera de la malla de nodos validos; marcalos dentro de ella"
+            )

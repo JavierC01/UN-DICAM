@@ -69,30 +69,31 @@ No hay linter ni formateador configurado.
 
 Capas: `api/v1/routes/*` (routers FastAPI delgados, montados bajo `/api/v1` en `api/v1/router.py`) → `services/*` (lógica de negocio; lanzan subclases de `*ServiceError` que las rutas traducen a HTTP) → `db/models.py` (SQLAlchemy) y `dic/*` (código numérico DIC puro). `schemas/*` contiene los modelos Pydantic.
 
-- `Core/` (con C mayúscula): `config.py` (pydantic-settings, lee `.env`), `security.py` (hash de contraseñas) y `celery_app.py`.
+- `Core/` (con C mayúscula): `config.py` (pydantic-settings, lee `.env`), `security.py` (hash de contraseñas y JWT) y `celery_app.py`.
 - El esquema se crea con `Base.metadata.create_all` (`db/init_db.py`). **No hay migraciones**: cambiar un modelo sobre un volumen de Postgres existente exige `ALTER`/borrado manual.
-- `SpecimenConfig` y `TrackingMesh` están indexados por `project_id` (uno por proyecto).
-- Auth (`/auth/register`, `/auth/login`, PBKDF2) existe pero **no emite token** y ningún endpoint está protegido.
+- `SpecimenConfig`, `TrackingMesh` y `MachineLoad` están indexados por `project_id` (uno por proyecto).
+- Auth: `/auth/login` emite un JWT HS256 (`Core/security.py`, sin dependencias) y `api/deps.get_current_user` lo exige en todos los routers salvo `/auth` (también acepta `?token=` para descargas). `SECRET_KEY` es obligatoria. Los tests usan el fixture `client` de `conftest.py`, ya autenticado.
 
 **Flujo de análisis** (pantallas → rutas → worker):
 
-1. Proyecto → calibración de probeta (`/specimen`, px↔mm vía `dic/probeta.py`) → malla de rastreo desde un polígono dibujado (`/tracking/mesh`). La malla es una grilla `filas × columnas` (por defecto 3×3, 2–20 cada una, elegida en `MeshScreen`), con nodos guardados **por filas** en `TrackingMesh.nodos`.
-2. `POST /analysis/start` valida que existan calibración y malla, inserta una fila `Analysis` cuyo id es también el `task_id` de Celery y encola `workers/tasks.process_full_analysis` (`subset_size` 32, `search_range` 20, `frame_inicio`/`frame_fin`).
-3. El worker abre la fuente con `DeviceService.open_capture_for_source_id` (id numérico = cámara; si no, ruta de archivo) y compara cada frame contra el **primer frame (referencia)** con `dic/pipeline.procesar_par_frames`: ZNCC con Numba + refinamiento subpíxel por mínimos cuadrados (`correlation.py`, `displacement.py`) → deformación por celda `(filas-1) × (columnas-1)` (`strain.calcular_deformaciones`). El desplazamiento se reporta desde el nodo central (`ResultadoFrame.nodo_centro`). Los frames donde el rastreo lanza `ValueError` se omiten.
-4. Salida: mapas en `storage/analyses/<id>/` (servidos en `/storage`) y una fila `Result` con curvas JSON.
-5. Carga (`carga_n`): OCR por frame (`dic/ocr.extract_load_value`, pytesseract) si la calibración tiene `roi_carga`; si no hay ROI o el OCR falla, cae en `CARGA_N_PLACEHOLDER = 0.0`. **Esto viola el principio 1 y está en el plan para corregirse.** La pantalla Setup hoy envía siempre `roi_carga: null`, así que en la práctica carga y esfuerzo son 0.
+1. Proyecto → Captura: video subido (`POST /devices/upload`, queda en `storage/uploads/` y su nombre es el `source_id`) o cámara → Configuración (`/specimen/configure`: calibración px↔mm vía `dic/probeta.py`, `tipo_ensayo`, `parametros_ensayo`, `fuente_carga` y `roi_carga`; archivo de la máquina en `/loads/{id}/archivo`) → Malla (`/tracking/mesh` con `filas × columnas` y `subset_size`; nodos **por filas** con `validos`; puntos del extensómetro en `PUT /tracking/{id}/puntos-ensayo`).
+2. `POST /analysis/start` valida calibración y malla, inserta `Analysis` (id = `task_id` de Celery) y encola `workers/tasks.process_full_analysis` (`subset_size`, `search_range`, `frame_inicio`/`frame_fin`).
+3. El worker revalida los nodos con el subset del análisis (`rastreo.preparar_geometria`: nodos válidos, triangulación, nodo central), compara cada frame contra el **primer frame** con `dic/pipeline.procesar_par_frames` (ZNCC + subpíxel; nodos perdidos = `None`) y calcula la deformación CST por triángulo. El extensómetro virtual interpola desplazamientos en los puntos del ensayo (`strain.localizar_punto`/`interpolar_desplazamiento`) y `dic/ensayos` convierte medida y carga en la curva del ensayo.
+4. Carga: OCR por frame o archivo de la máquina sincronizado (`cargas/sincronizacion.py`). Lo que falta queda `NaN` en el worker y `null` en el JSON (`_sin_nan`), con conteos en `carga` y textos en `advertencias`.
+5. Salida: mapas sobre el primer frame en `storage/analyses/<id>/` (servidos en `/storage`) y una fila `Result` con `frames` (tabla por frame), curvas, `ensayo`, `carga`, `advertencias` y `metadatos` de reproducibilidad. `POST /analysis/{id}/propiedad` guarda el ajuste lineal en `ensayo.ajuste`; `/export/*` genera CSV/PDF/JPG desde ese mismo `data`.
 
 **Cuidados al editar**
 
-- La distribución de nodos está implementada **dos veces**: `services/tracking.TrackingService._distribute_nodes` (la usa la API) y `dic/rastreo.Rastreo._distribuir_nodos` (biblioteca). Mantenerlas sincronizadas o, mejor, eliminar una.
-- Todo lo que indexe nodos (celdas de deformación, nodo central) debe usar `filas`/`columnas`; no fijar 9 nodos.
-- `DeviceService` usa `cv2.CAP_DSHOW` para cámaras, que solo existe en Windows. En Linux/Docker no funciona; los archivos usan `CAP_ANY`.
-- `source_id` de tipo archivo acepta hoy cualquier ruta del servidor (riesgo de seguridad pendiente).
+- La geometría de la malla vive solo en `dic/rastreo.py`; `services/tracking.py` la usa. No reintroducir otra implementación.
+- Todo lo que indexe nodos debe respetar `validos` y aceptar desplazamientos `None`; no fijar 9 nodos ni asumir grilla completa.
+- Un tipo de ensayo nuevo se agrega como subclase de `Ensayo` en `dic/ensayos/tipos.py` y se registra en `ENSAYOS`; no toca el pipeline.
+- `DeviceService` elige `CAP_DSHOW` (Windows), `CAP_V4L2` (Linux) o `CAP_ANY`; dentro de Docker no hay cámaras USB.
+- `source_id` de archivo solo acepta nombres dentro de `storage/uploads/` (`services/devices.ruta_video`).
 - `plan.md` y `todo.md` registran fases y pendientes; consultarlos antes de empezar una tarea.
 
 ### Tests
 
-`tests/conftest.py` fija variables de entorno antes de importar la app: SQLite en memoria, broker de Celery en memoria y `task_always_eager=True`, de modo que las tareas corren de forma síncrona. No hace falta Postgres ni Redis. `test_ocr.py` omite el test real de Tesseract si el binario no está (la imagen Docker lo incluye).
+`tests/conftest.py` fija variables de entorno antes de importar la app: SQLite en memoria, broker de Celery en memoria, `SECRET_KEY` y `STORAGE_DIR` temporal, y `task_always_eager=True`, de modo que las tareas corren de forma síncrona. Las formas no rectangulares de prueba están en `tests/formas.py`. No hace falta Postgres ni Redis. `test_ocr.py` omite el test real de Tesseract si el binario no está (la imagen Docker lo incluye).
 
 ## 5. Arquitectura objetivo del backend
 

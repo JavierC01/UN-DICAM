@@ -22,14 +22,3 @@ class Probeta:
 
     def calcular_esfuerzo(self, carga_n: float) -> float:
         return carga_n / self.area_mm2
-
-    def preparar_datos_analisis(self, u_px: float, v_px: float, eps_xx: float, eps_yy: float, eps_xy: float, carga_n: float) -> dict:
-        return {
-            "u_mm": self.convertir_desplazamiento(u_px),
-            "v_mm": self.convertir_desplazamiento(v_px),
-            "eps_xx": eps_xx,
-            "eps_yy": eps_yy,
-            "eps_xy": eps_xy,
-            "carga_n": carga_n,
-            "esfuerzo_mpa": self.calcular_esfuerzo(carga_n),
-        }

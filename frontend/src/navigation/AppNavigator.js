@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import LoginScreen from '../screens/login';
@@ -10,13 +10,19 @@ import ResultsScreen from '../screens/results';
 import ReportsScreen from '../screens/reports';
 import SetupScreen from '../screens/setup';
 import UserManualScreen from '../screens/user_manual';
+import { setUnauthorizedHandler } from '../api/client';
 import { ROUTES } from './routes';
 
 const Stack = createNativeStackNavigator();
+const navigationRef = createNavigationContainerRef();
+
+setUnauthorizedHandler(() => {
+  if (navigationRef.isReady()) navigationRef.reset({ index: 0, routes: [{ name: ROUTES.LOGIN }] });
+});
 
 export default function AppNavigator() {
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName={ROUTES.LOGIN} screenOptions={{ headerShown: false }}>
         <Stack.Screen name={ROUTES.LOGIN} component={LoginScreen} />
         <Stack.Screen name={ROUTES.REGISTER} component={RegisterScreen} />
@@ -25,7 +31,7 @@ export default function AppNavigator() {
         <Stack.Screen name={ROUTES.MESH} component={MeshScreen} options={{ headerShown: true, title: 'Malla de rastreo' }} />
         <Stack.Screen name={ROUTES.RESULTS} component={ResultsScreen} options={{ headerShown: true, title: 'Resultados' }} />
         <Stack.Screen name={ROUTES.REPORTS} component={ReportsScreen} options={{ headerShown: true, title: 'Reportes' }} />
-        <Stack.Screen name={ROUTES.SETUP} component={SetupScreen} options={{ headerShown: true, title: 'Calibracion de probeta' }} />
+        <Stack.Screen name={ROUTES.SETUP} component={SetupScreen} options={{ headerShown: true, title: 'Configuracion del ensayo' }} />
         <Stack.Screen name={ROUTES.USER_MANUAL} component={UserManualScreen} options={{ headerShown: true, title: 'Manual de usuario' }} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -51,3 +51,7 @@ backend/storage/
 
 # Grafo de conocimiento generado por graphify
 graphify-out/
+
+# Videos subidos, resultados y otros archivos generados en runtime
+storage/*
+!storage/.gitkeep

@@ -1,5 +1,5 @@
 from app.db.base import Base
-from app.db.models import Analysis, ImagePair, Project, Result, SpecimenConfig, TrackingMesh, User
+from app.db.models import Analysis, MachineLoad, Project, Result, SpecimenConfig, TrackingMesh, User  # noqa: F401  (registra las tablas)
 from app.db.session import engine
 
 

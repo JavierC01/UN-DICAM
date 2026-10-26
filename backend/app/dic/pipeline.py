@@ -1,44 +1,51 @@
+import math
 from dataclasses import dataclass
 
 import numpy as np
 
 from app.dic.displacement import ResultadoNodo, rastrear_malla
-from app.dic.strain import CampoDeformacion, calcular_deformaciones
+from app.dic.rastreo import GeometriaMalla
+from app.dic.strain import CampoTriangular, Desplazamiento, deformacion_triangulos
 
 
 @dataclass(frozen=True)
 class ResultadoFrame:
-    nodos: list[ResultadoNodo]
+    nodos: list[ResultadoNodo | None]
+    desplazamientos_mm: list[Desplazamiento]
     coef_correlacion_medio: float
-    campo: CampoDeformacion
-    nodo_centro: ResultadoNodo
+    campo: CampoTriangular
+    nodo_centro: ResultadoNodo | None
     u_mm_centro: float
     v_mm_centro: float
+    nodos_perdidos: int
 
 
 def procesar_par_frames(
     imagen_ref: np.ndarray,
     imagen_def: np.ndarray,
-    nodos_ref_px: list[dict[str, float]],
+    geometria: GeometriaMalla,
     mm_por_px: float,
     subset_size: int,
     search_range: int,
-    filas: int = 3,
-    columnas: int = 3,
 ) -> ResultadoFrame:
-    """Rastrea la malla de filas x columnas nodos entre dos frames y calcula el campo de deformacion resultante."""
-    resultados = rastrear_malla(imagen_ref, imagen_def, nodos_ref_px, subset_size, search_range)
+    """Rastrea los nodos validos entre dos frames y calcula la deformacion por triangulos (CST)."""
+    resultados = rastrear_malla(imagen_ref, imagen_def, geometria.nodos, subset_size, search_range, geometria.validos)
+    rastreados = [r for r in resultados if r is not None]
+    if not rastreados:
+        raise ValueError("Ningun nodo se pudo rastrear en este frame")
 
-    nodos_mm = [{"x": nodo["x"] * mm_por_px, "y": nodo["y"] * mm_por_px} for nodo in nodos_ref_px]
-    desplazamientos_mm = [(r.u_px * mm_por_px, r.v_px * mm_por_px) for r in resultados]
-    campo = calcular_deformaciones(nodos_mm, desplazamientos_mm, columnas)
+    nodos_mm = [{"x": n["x"] * mm_por_px, "y": n["y"] * mm_por_px} for n in geometria.nodos]
+    desplazamientos_mm = [None if r is None else (r.u_px * mm_por_px, r.v_px * mm_por_px) for r in resultados]
+    campo = deformacion_triangulos(nodos_mm, desplazamientos_mm, geometria.triangulos)
 
-    centro = resultados[(filas // 2) * columnas + columnas // 2]
+    centro = resultados[geometria.indice_centro]
     return ResultadoFrame(
         nodos=resultados,
-        coef_correlacion_medio=float(np.mean([r.coef_correlacion for r in resultados])),
+        desplazamientos_mm=desplazamientos_mm,
+        coef_correlacion_medio=float(np.mean([r.coef_correlacion for r in rastreados])),
         campo=campo,
         nodo_centro=centro,
-        u_mm_centro=centro.u_px * mm_por_px,
-        v_mm_centro=centro.v_px * mm_por_px,
+        u_mm_centro=centro.u_px * mm_por_px if centro else math.nan,
+        v_mm_centro=centro.v_px * mm_por_px if centro else math.nan,
+        nodos_perdidos=sum(1 for r, v in zip(resultados, geometria.validos) if v and r is None),
     )

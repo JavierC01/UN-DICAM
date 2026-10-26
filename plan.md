@@ -1,6 +1,6 @@
 # Plan de trabajo — UN-DICAM
 
-Estado al 2026-10-25. Basado en el código de `main` (último commit revisado: `8ea32b4`).
+Estado al 2026-10-26. Basado en el código de `main` (último commit revisado: `46de069`) más los cambios de la Fase 7.
 
 UN-DICAM es una herramienta **open source** de Correlación Digital de Imágenes (DIC) 2D con una sola cámara, para caracterizar materiales y elementos de construcción: probetas de madera y concreto, conexiones metálicas no rectangulares, vigas CLT y CLBT, y núcleos de vigas y columnas. Soporta ensayos de tracción, compresión, flexión, cortante/conexiones y momento en pórticos, y tiene un objetivo académico: presentar el DIC como metodología alterna a los ensayos convencionales en la Digital Twins Engineering Conference 2027.
 
@@ -13,15 +13,15 @@ El usuario calibra el objeto, sube o graba un video (o usa una cámara en vivo),
 | Fase | Tema | Estado |
 |---|---|---|
 | 1 | Infraestructura base | ✅ Completada |
-| 2 | Cuentas de usuario y proyectos | 🟡 Parcial |
-| 3 | Configuración del ensayo (probeta, video, malla) | 🟡 Parcial |
-| 4 | Motor DIC y análisis asíncrono | 🟡 Casi completa (para grilla rectangular) |
-| 5 | Resultados, exportación y reportes | 🔴 Pendiente (mayormente) |
-| 6 | Calidad, seguridad, open source y validación | 🔴 Pendiente |
-| 7 | Geometría arbitraria, tipos de ensayo y carga | 🔴 Pendiente |
-| 8 | Diseño atómico del frontend | 🔴 Pendiente |
+| 2 | Cuentas de usuario y proyectos | 🟡 Casi completa (falta `owner_id`) |
+| 3 | Configuración del ensayo (probeta, video, malla) | ✅ Completada |
+| 4 | Motor DIC y análisis asíncrono | 🟡 Casi completa (falta rastreo incremental) |
+| 5 | Resultados, exportación y reportes | ✅ Completada |
+| 6 | Calidad, seguridad, open source y validación | 🟡 Parcial |
+| 7 | Geometría arbitraria, tipos de ensayo y carga | ✅ Completada (sin segmentación automática ni normas por material) |
+| 8 | Diseño atómico del frontend | 🟡 Iniciada (tokens, `FrameAnnotator`, `CurveChart`, `SegmentedControl`) |
 
-El flujo principal ya funciona de punta a punta: **login → proyecto → calibración → fuente de video → malla → análisis → estado/resumen**. Desde el 21-oct la malla admite `filas × columnas` configurables (2–20). Lo que falta es, sobre todo: (a) que la carga se lea de verdad (hoy es 0, así que el esfuerzo también); (b) que la malla y la deformación funcionen en formas no rectangulares; (c) mostrar y exportar los resultados; (d) proteger la API y preparar el proyecto para publicarse con validación científica.
+El flujo completo funciona de punta a punta: **login (JWT) → proyecto → video (subido, grabado o cámara) → calibración, tipo de ensayo y fuente de carga → malla en forma arbitraria y extensómetro virtual → análisis → curvas, mapas y propiedad → exportación CSV/PDF/JPG**. Lo que falta es, sobre todo: (a) la validación científica contra extensómetro/LVDT para la conferencia; (b) probar el frontend en dispositivos (las dependencias nuevas no se pudieron instalar en el entorno de desarrollo); (c) proyectos por usuario y migraciones; (d) completar el diseño atómico del frontend.
 
 > Nota: el código del backend referencia "Fase 5" (exportación y OCR). La numeración 1–6 se mantiene para no romper esas referencias; los temas nuevos son las fases 7 y 8.
 
@@ -42,96 +42,65 @@ El flujo principal ya funciona de punta a punta: **login → proyecto → calibr
 ## Fase 2 — Cuentas de usuario y proyectos 🟡
 
 **Hecho**
-- Modelo `User`, registro (`/auth/register`) y login (`/auth/login`) con contraseñas PBKDF2.
-- Pantallas de Login y Registro conectadas a la API, con manejo de errores (401, 409, sin conexión).
-- CRUD de proyectos (listar, crear, ver, eliminar) y pantalla de Proyectos con estados.
+- Registro y login con PBKDF2; el login emite un JWT HS256 (`SECRET_KEY` obligatoria) que exigen todos los endpoints salvo `/auth`.
+- Sesión en el frontend (`expo-secure-store`, localStorage en web), cierre de sesión y regreso al login ante un 401.
+- CRUD de proyectos con estados `pending`, `in_progress`, `completed`, `failed` y `revoked`.
 
 **Falta**
-- **Sesión/token:** el login solo devuelve el usuario; no se emite JWT ni se guarda sesión en el frontend. Cualquier endpoint es accesible sin autenticar.
 - **Proyectos por usuario:** `Project` no tiene `owner_id`; todos los usuarios ven todos los proyectos.
-- Cerrar sesión; validaciones de formulario (correo, longitud de contraseña) en el frontend.
+- Validaciones de formulario (correo, longitud de contraseña) en el frontend.
 
-## Fase 3 — Configuración del ensayo 🟡
+## Fase 3 — Configuración del ensayo ✅
 
-**Hecho**
-- Calibración de probeta: cálculo de px/mm, mm/px y área; persistencia en `specimen_config`; pantalla Setup que carga la configuración existente.
-- Fuentes de video: listar cámaras, abrir cámara o archivo, obtener el primer frame en base64; pantalla de Captura.
-- Malla de rastreo: validación del polígono, distribución de nodos en grilla `filas × columnas` (por defecto 3×3, configurable de 2 a 20), persistencia en `tracking_meshes`; pantalla Malla con toques sobre la imagen, deshacer/limpiar y parámetros.
-- Esquema `RoiCarga` tipado para la región donde aparece la carga en el video.
-
-**Falta**
-- **Subida de video:** hoy el archivo se indica como ruta del servidor; falta un endpoint de upload (`python-multipart` ya está instalado), su UI y la validación de rutas.
-- **Grabación desde el celular:** usar `expo-camera` (instalado, sin usar), grabar y subir el video.
-- **Cámara en vivo en el PC:** `CAP_DSHOW` solo existe en Windows; en Linux/Docker no hay acceso a cámaras USB. Definir la estrategia (backend nativo en Windows, `CAP_V4L2` en Linux, o grabar desde el móvil).
-- **ROI de la carga:** Setup envía siempre `roi_carga: null`, por lo que el OCR nunca se ejecuta. Se resuelve con el organismo `FrameAnnotator` (Fase 8), modo `rect`.
-- **Medir `long_calibracion_px` sobre la imagen** con dos toques (`FrameAnnotator`, modo `line`) en lugar de escribirlo a mano.
-- Recuperar la malla guardada al volver a la pantalla (no existe `GET /tracking/{project_id}`).
+- Video: subida desde PC o celular (`POST /devices/upload`, extensión y tamaño validados, archivos solo en `storage/uploads/`), grabación con `expo-camera`, cámaras del servidor con `CAP_DSHOW` (Windows) o `CAP_V4L2` (Linux).
+- Flujo Captura → Configuración → Malla: la calibración (línea), la ROI de carga (rectángulo), el polígono y los puntos del extensómetro se marcan sobre el primer frame con `FrameAnnotator`.
+- Tipo de ensayo, parámetros y fuente de carga (archivo de la máquina, OCR o ninguna) en Configuración.
+- **Falta (menor):** recuperar la malla guardada al volver a la pantalla (`GET /tracking/{project_id}`).
 
 ## Fase 4 — Motor DIC y análisis asíncrono 🟡
 
 **Hecho**
-- Correlación ZNCC acelerada con Numba, búsqueda del pico entero y refinamiento subpíxel por mínimos cuadrados.
-- Rastreo de la malla y cálculo de deformaciones εxx, εyy, εxy por celda `(filas-1) × (columnas-1)`.
-- Tarea Celery `process_full_analysis`: lee el video, procesa frame a frame, reporta progreso, genera mapas JPG y guarda resultados en `results`.
-- Endpoints de inicio, estado, resultados y cancelación; pantalla de Resultados con sondeo cada 1.5 s, barra de progreso y cancelación.
-- Lectura de carga por OCR (recorte de ROI, binarización Otsu, Tesseract, parseo numérico) integrada en la tarea, con tests. *Verificar con `git status` que `ocr.py`, `RoiCarga` y `test_ocr.py` estén commiteados.*
+- ZNCC con Numba, pico entero y refinamiento subpíxel por mínimos cuadrados; los nodos inválidos o que no se pudieron rastrear en un frame quedan nulos en vez de descartar el frame.
+- Deformación CST por triangulación; tarea Celery con estados `running`/`success`/`failed` en el análisis y el proyecto; cancelación marca `revoked`.
+- La carga faltante (OCR fallido, frame fuera del registro, sin fuente) queda nula, se cuenta y se advierte; nunca se usa `0.0`.
+- WebSocket de progreso eliminado (la app usa sondeo); `step_size` eliminado (el paso lo fija la malla).
 
 **Falta**
-- Cuando el OCR falla en un frame hoy se usa `0.0`, lo que mete puntos falsos en las curvas. Descartar o interpolar el punto y contar los fallos (principio de rigor científico).
-- `step_size` se recibe pero el backend lo ignora.
 - La referencia es siempre el frame inicial; para deformaciones grandes conviene actualizar la referencia (rastreo incremental).
-- Revisar los ejes de `curva_desplaz_carga` (hoy `x = carga`, `y = desplazamiento`; lo usual es al revés).
-- Estados coherentes: `Analysis` nunca pasa a `running`; si el análisis falla o se cancela, el `Project` se queda en `in_progress`.
-- El WebSocket `/analysis/ws/{task_id}` es un stub: implementarlo o eliminarlo.
-- Código duplicado entre `app/dic/` y `app/services/` (`dispositivos.py` vs `devices.py`, `rastreo.py` vs `tracking.py`, `analisis.py` vs `services/analysis.py`); el modelo `ImagePair` no se usa.
 
-## Fase 5 — Resultados, exportación y reportes 🔴
+## Fase 5 — Resultados, exportación y reportes ✅
 
-**Hecho**
-- El backend guarda curvas, rutas de los mapas y métricas resumen, y `GET /analysis/results/{id}` las devuelve.
-- La pantalla de Resultados muestra esfuerzo máximo, deformación máxima y coeficiente de correlación medio.
+- Resultados: curva del ensayo con ajuste de la propiedad, carga–desplazamiento (x = desplazamiento, y = carga), esfuerzo–deformación (`CurveChart` propio con `react-native-svg`), mapas sobre el primer frame, advertencias y resumen de carga.
+- Exportación CSV, PDF y JPG (`dic/export.py`) con metadatos de reproducibilidad; historial `GET /projects/{id}/analyses`; pantalla de Reportes con descargas.
 
-**Falta**
-- **Gráficas** carga–desplazamiento y esfuerzo–deformación (`CurveChart`).
-- **Mapas** εxx, εyy, εxy: anteponer el host del API a las URLs `/storage/...` y, a futuro, dibujarlos sobre el primer frame.
-- **Exportación** CSV, PDF y JPG: los endpoints `/export/*` devuelven 501 y `app/dic/export.py` lanza `NotImplementedError`. `pandas` y `reportlab` ya están instalados. Los reportes deben incluir los metadatos de reproducibilidad (parámetros, versión, hash del video, método de carga).
-- **Historial:** no hay endpoint para listar los análisis de un proyecto.
-- **Pantalla de Reportes:** estática (botón sin acción).
-- Quitar el mensaje obsoleto de "resultados aún no disponibles" (código 501) en Resultados.
+## Fase 6 — Calidad, seguridad, open source y validación 🟡
 
-## Fase 6 — Calidad, seguridad, open source y validación 🔴
-
-- Autenticación obligatoria en todos los endpoints (depende de la Fase 2) y CORS restringido por defecto.
-- Validar `source_id` de tipo archivo para evitar leer rutas arbitrarias del servidor; límite de tamaño en la subida.
-- Tests de integración de rutas (auth, proyectos, export) y tests de frontend (hoy no hay ninguno).
-- Manual de usuario real (hoy es texto de ejemplo).
-- **Open source:** archivo `LICENSE` **[DECIDIR]**, README bilingüe, `CONTRIBUTING.md`, integración continua con pytest, sin credenciales ni videos en el repo, atribución a código de terceros.
+- **Hecho:** autenticación en todos los endpoints, `source_id` restringido a `storage/uploads/`, límite de tamaño en la subida, tests de rutas (auth, cargas, malla, análisis, export), manual de usuario.
+- **Falta:** CORS restringido por defecto; descargas sin token en la URL y `/storage` protegido; tests de frontend (jest-expo no está instalado); prueba real del OCR con Tesseract en Docker.
+- **Open source:** archivo `LICENSE` **[DECIDIR]**, README bilingüe, `CONTRIBUTING.md`, integración continua con pytest, atribución a código de terceros.
 - **Validación científica:** carpeta `validation/` con imágenes sintéticas de desplazamiento conocido y comparación contra extensómetro/LVDT/galga en ensayos reales; documentar la resolución de deformación y la limitación 2D.
 
-## Fase 7 — Geometría arbitraria, tipos de ensayo y carga 🔴
+## Fase 7 — Geometría arbitraria, tipos de ensayo y carga ✅
 
-**Geometría arbitraria** (hoy el polígono solo define una máscara; los nodos son una grilla sobre el rectángulo envolvente y la deformación asume celdas rectangulares)
-- Nodos válidos solo donde el subset completo cae dentro de la forma (máscara erosionada por la mitad del subset); marcar los inválidos.
-- Deformación sin depender de la grilla: celdas con 4 esquinas válidas (versión mínima) y luego triangulación con elementos de deformación constante o ventana local.
-- Mapas con máscara y dibujados sobre el primer frame.
-- Nodo "central" como el nodo válido más cercano al centroide del polígono.
-- Unificar la distribución de nodos en un solo lugar (hoy está duplicada).
-- Segmentación automática de la forma (opcional) para no marcar vértices a mano.
+**Geometría arbitraria** (`dic/rastreo.py`, `dic/strain.py`, `dic/mapas.py`)
+- Grilla `filas × columnas` sobre la zona válida (máscara erosionada por el subset); los nodos que caen en huecos quedan inválidos (`validos`) y no se rastrean ni se mueven al borde.
+- Deformación por triangulación de Delaunay de los nodos válidos con elementos CST; se descartan triángulos que crucen fuera de la forma; medias ponderadas por área. La versión de grilla pone `NaN` en celdas con esquinas inválidas.
+- Nodo central = nodo válido más cercano al centroide del polígono. Mapas dibujados sobre el primer frame.
+- Una sola implementación de la distribución de nodos; duplicados entre `dic/` y `services/` eliminados.
+- Pendiente opcional: segmentación automática de la forma.
 
 **Tipos de ensayo** (`dic/ensayos/`, estrategia por tipo)
-- Interfaz común: cálculo de esfuerzo, extensómetro virtual y módulo.
-- Tracción y compresión (extensómetro entre dos puntos, módulo de elasticidad con rango elegido por el usuario).
-- Flexión (deflexión; CLT/CLBT).
-- Cortante y conexiones metálicas (deslizamiento relativo).
-- Momento en pórticos (rotación).
-- Definir las normas aplicables por material **[DECIDIR]**.
+- Interfaz `Ensayo`: puntos a marcar, extensómetro virtual (`medir`), respuesta a partir de la carga y propiedad (pendiente).
+- Tracción y compresión (deformación entre dos puntos, esfuerzo F/A → módulo de elasticidad), flexión (deflexión relativa a los apoyos → rigidez), cortante/conexiones (deslizamiento relativo en el eje de carga → módulo de deslizamiento), pórtico (rotación y momento F·brazo → rigidez rotacional).
+- Ajuste lineal en el rango que elige el usuario (en x o como fracción de la respuesta máxima), con R² y rango reportados. Las normas por material siguen **[DECIDIR]**.
 
-**Carga**
-- Importador de archivo de la máquina (CSV/XLSX) con mapeo de columnas y unidades.
-- Sincronización temporal carga↔frames (offset, evento de inicio, interpolación).
-- OCR como alternativa para máquinas sin exportación, con ROI dibujada en la UI y conteo de fallos.
+**Carga** (`cargas/`)
+- Importador CSV/XLSX con mapeo de columnas y unidades; sincronización por offset y evento de inicio (umbral de carga); interpolación a los tiempos de frame; frames fuera del registro quedan nulos y se cuentan.
+- OCR con ROI dibujada en la UI; los fallos se descartan y se cuentan.
 
-## Fase 8 — Diseño atómico del frontend 🔴
+**Reproducibilidad:** cada resultado guarda parámetros, malla, calibración, método y archivo de carga (con sha256), hash del video, versión y commit (`GIT_COMMIT`), y advertencias.
+
+## Fase 8 — Diseño atómico del frontend 🟡
 
 Objetivo: una UI consistente, reutilizable y testeable. Las reglas completas (dirección de imports, qué puede llamar a la API, tokens) están en [CLAUDE.md](CLAUDE.md).
 

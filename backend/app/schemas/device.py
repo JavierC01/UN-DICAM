@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class OpenDeviceRequest(BaseModel):
     type: Literal["camera", "file"]
+    # Camara: indice numerico. Archivo: nombre devuelto por POST /devices/upload (vive en storage/uploads/).
     source_id: int | str
 
 

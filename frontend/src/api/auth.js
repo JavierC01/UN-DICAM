@@ -1,48 +1,43 @@
-import { API_BASE_URL } from '../config/api';
+import { apiRequest, ApiError } from './client';
+import { clearToken, saveToken } from './session';
 
 export class InvalidCredentialsError extends Error {}
 export class EmailAlreadyRegisteredError extends Error {}
 
 export async function login(email, password) {
-  let response;
   try {
-    response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const session = await apiRequest('/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: { email, password },
+      fallbackMessage: 'No fue posible iniciar sesion. Intenta nuevamente.',
     });
-  } catch {
-    throw new Error('No fue posible conectar con el servidor. Verifica tu conexion.');
+    await saveToken(session.access_token);
+    return session.user;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      throw new InvalidCredentialsError(
+        'Las credenciales no se encuentran en la base de datos de usuarios registrados.'
+      );
+    }
+    throw err;
   }
+}
 
-  if (response.status === 401) {
-    throw new InvalidCredentialsError(
-      'Las credenciales no se encuentran en la base de datos de usuarios registrados.'
-    );
-  }
-  if (!response.ok) {
-    throw new Error('No fue posible iniciar sesion. Intenta nuevamente.');
-  }
-  return response.json();
+export function logout() {
+  return clearToken();
 }
 
 export async function register(fullName, email, password) {
-  let response;
   try {
-    response = await fetch(`${API_BASE_URL}/auth/register`, {
+    return await apiRequest('/auth/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ full_name: fullName, email, password }),
+      body: { full_name: fullName, email, password },
+      fallbackMessage: 'No fue posible crear la cuenta. Intenta nuevamente.',
     });
-  } catch {
-    throw new Error('No fue posible conectar con el servidor. Verifica tu conexion.');
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 409) {
+      throw new EmailAlreadyRegisteredError('Ese correo ya se encuentra registrado.');
+    }
+    throw err;
   }
-
-  if (response.status === 409) {
-    throw new EmailAlreadyRegisteredError('Ese correo ya se encuentra registrado.');
-  }
-  if (!response.ok) {
-    throw new Error('No fue posible crear la cuenta. Intenta nuevamente.');
-  }
-  return response.json();
 }

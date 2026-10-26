@@ -13,3 +13,7 @@ export function configureSpecimen(payload) {
     fallbackMessage: 'No fue posible guardar la configuracion de la probeta.',
   });
 }
+
+export function listTestTypes() {
+  return apiRequest('/specimen/ensayos', { fallbackMessage: 'No fue posible obtener los tipos de ensayo.' });
+}

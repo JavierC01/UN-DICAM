@@ -18,3 +18,9 @@ export function deleteProject(projectId) {
     fallbackMessage: 'No fue posible eliminar el proyecto.',
   });
 }
+
+export function listProjectAnalyses(projectId) {
+  return apiRequest(`/projects/${projectId}/analyses`, {
+    fallbackMessage: 'No fue posible obtener el historial de analisis.',
+  });
+}

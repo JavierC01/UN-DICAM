@@ -1,32 +1,25 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Dimensions,
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { buildMesh, validateMesh } from '../../api/tracking';
 import { startAnalysis } from '../../api/analysis';
+import { listTestTypes } from '../../api/specimen';
+import { buildMesh, setTestPoints, validateMesh } from '../../api/tracking';
+import FrameAnnotator from '../../components/organisms/FrameAnnotator';
 import { ROUTES } from '../../navigation/routes';
+import { colors, radii, spacing, typography } from '../../styles/theme';
 
-const DEFAULT_PARAMS = { subset_size: '32', step_size: '8', search_range: '20' };
-const DEFAULT_GRID = { filas: '3', columnas: '3' };
+const DEFAULT_PARAMS = { subset_size: '32', search_range: '20' };
+const DEFAULT_GRID = { filas: '6', columnas: '6' };
 const MIN_GRID = 2;
 const MAX_GRID = 20;
 
 export default function MeshScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { projectId, projectName, sourceId, frameWidth, frameHeight, frameBase64, frameMimeType } =
+  const { projectId, projectName, sourceId, frameWidth, frameHeight, frameBase64, frameMimeType, tipoEnsayo } =
     route.params || {};
+  const imageUri = frameBase64 ? `data:${frameMimeType || 'image/jpeg'};base64,${frameBase64}` : null;
 
   const [points, setPoints] = useState([]);
   const [validation, setValidation] = useState(null);
@@ -35,20 +28,23 @@ export default function MeshScreen() {
   const [building, setBuilding] = useState(false);
   const [grid, setGrid] = useState(DEFAULT_GRID);
   const [params, setParams] = useState(DEFAULT_PARAMS);
+  const [testType, setTestType] = useState(null);
+  const [testPoints, setTestPointsState] = useState([]);
+  const [testPointsSaved, setTestPointsSaved] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState('');
 
-  const screenWidth = Dimensions.get('window').width;
-  const displayWidth = screenWidth - 48;
-  const displayHeight = frameWidth ? displayWidth * (frameHeight / frameWidth) : displayWidth;
-  const scaleX = frameWidth ? displayWidth / frameWidth : 1;
-  const scaleY = frameHeight ? displayHeight / frameHeight : 1;
+  useEffect(() => {
+    listTestTypes()
+      .then((types) => setTestType(types.find((t) => t.tipo === (tipoEnsayo || 'traccion')) || null))
+      .catch((err) => setError(err.message || 'No fue posible obtener el tipo de ensayo.'));
+  }, [tipoEnsayo]);
 
   useEffect(() => {
     setMesh(null);
     if (points.length < 3 || !frameWidth || !frameHeight) {
       setValidation(null);
-      return;
+      return undefined;
     }
     let cancelled = false;
     setValidating(true);
@@ -67,36 +63,40 @@ export default function MeshScreen() {
     };
   }, [points, projectId, frameWidth, frameHeight]);
 
-  const handleTap = (event) => {
-    const { locationX, locationY } = event.nativeEvent;
-    const x = Math.max(0, Math.min(frameWidth, locationX / scaleX));
-    const y = Math.max(0, Math.min(frameHeight, locationY / scaleY));
-    setPoints((prev) => [...prev, { x, y }]);
+  const resetMesh = () => {
+    setMesh(null);
+    setTestPointsState([]);
+    setTestPointsSaved(false);
   };
-
-  const handleUndo = () => setPoints((prev) => prev.slice(0, -1));
-  const handleClear = () => setPoints([]);
 
   const handleBuildMesh = async () => {
     setError('');
     const filas = Number(grid.filas);
     const columnas = Number(grid.columnas);
+    const subsetSize = Number(params.subset_size);
     const fuera = (n) => !Number.isInteger(n) || n < MIN_GRID || n > MAX_GRID;
     if (fuera(filas) || fuera(columnas)) {
       setError(`Filas y columnas deben ser enteros entre ${MIN_GRID} y ${MAX_GRID}.`);
       return;
     }
+    if (!Number.isInteger(subsetSize) || subsetSize < 5) {
+      setError('El subset debe ser un entero de al menos 5 px.');
+      return;
+    }
     setBuilding(true);
+    resetMesh();
     try {
-      const result = await buildMesh({
-        project_id: projectId,
-        frame_width: frameWidth,
-        frame_height: frameHeight,
-        puntos: points,
-        filas,
-        columnas,
-      });
-      setMesh(result);
+      setMesh(
+        await buildMesh({
+          project_id: projectId,
+          frame_width: frameWidth,
+          frame_height: frameHeight,
+          puntos: points,
+          filas,
+          columnas,
+          subset_size: subsetSize,
+        })
+      );
     } catch (err) {
       setError(err.message || 'No fue posible construir la malla.');
     } finally {
@@ -104,12 +104,21 @@ export default function MeshScreen() {
     }
   };
 
+  const handleSaveTestPoints = async () => {
+    setError('');
+    try {
+      await setTestPoints(projectId, testPoints);
+      setTestPointsSaved(true);
+    } catch (err) {
+      setError(err.message || 'No fue posible guardar los puntos del ensayo.');
+    }
+  };
+
   const handleStartAnalysis = async () => {
     setError('');
     const subsetSize = Number(params.subset_size);
-    const stepSize = Number(params.step_size);
     const searchRange = Number(params.search_range);
-    if (!subsetSize || !stepSize || !searchRange) {
+    if (!subsetSize || !searchRange) {
       setError('Revisa los parametros de analisis, deben ser numeros mayores a cero.');
       return;
     }
@@ -120,7 +129,6 @@ export default function MeshScreen() {
         project_id: projectId,
         source_id: sourceId,
         subset_size: subsetSize,
-        step_size: stepSize,
         search_range: searchRange,
         frame_inicio: 0,
       });
@@ -132,7 +140,7 @@ export default function MeshScreen() {
     }
   };
 
-  if (!frameBase64) {
+  if (!imageUri) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>
@@ -142,10 +150,12 @@ export default function MeshScreen() {
     );
   }
 
+  const validCount = mesh ? mesh.validos.filter(Boolean).length : 0;
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Malla de rastreo</Text>
-      <Text style={styles.subtitle}>Toca la imagen para marcar los puntos del poligono (minimo 3).</Text>
+      <Text style={styles.subtitle}>{projectName}</Text>
 
       {error ? (
         <View style={styles.errorBox}>
@@ -153,39 +163,22 @@ export default function MeshScreen() {
         </View>
       ) : null}
 
-      <Pressable onPress={handleTap} style={[styles.imageWrapper, { width: displayWidth, height: displayHeight }]}>
-        <Image
-          style={{ width: displayWidth, height: displayHeight }}
-          source={{ uri: `data:${frameMimeType || 'image/jpeg'};base64,${frameBase64}` }}
-          resizeMode="contain"
-        />
-        {points.map((point, index) => (
-          <View
-            key={`point-${index}`}
-            style={[styles.marker, { left: point.x * scaleX - 6, top: point.y * scaleY - 6 }]}
-          >
-            <Text style={styles.markerText}>{index + 1}</Text>
-          </View>
-        ))}
-        {mesh?.nodos.map((node, index) => (
-          <View
-            key={`node-${index}`}
-            style={[styles.nodeMarker, { left: node.x * scaleX - 4, top: node.y * scaleY - 4 }]}
-          />
-        ))}
-      </Pressable>
-
-      <View style={styles.pointActions}>
-        <TouchableOpacity style={styles.smallButton} onPress={handleUndo} disabled={points.length === 0}>
-          <Text style={styles.smallButtonText}>Deshacer punto</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.smallButton} onPress={handleClear} disabled={points.length === 0}>
-          <Text style={styles.smallButtonText}>Limpiar</Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={styles.section}>1. Region de interes</Text>
+      <FrameAnnotator
+        imageUri={imageUri}
+        frameWidth={frameWidth}
+        frameHeight={frameHeight}
+        mode="polygon"
+        points={points}
+        onChange={setPoints}
+        nodes={mesh?.nodos}
+        validity={mesh?.validos}
+        disabled={building}
+        hint="Toca los vertices del contorno del objeto (minimo 3). La forma puede ser cualquiera: L, entalla, hueso de perro."
+      />
 
       {validating ? (
-        <ActivityIndicator color="#1f6feb" style={styles.loading} />
+        <ActivityIndicator color={colors.primary} style={styles.loading} />
       ) : validation ? (
         <Text style={[styles.validationText, validation.valid ? styles.validText : styles.invalidText]}>
           {validation.message} (area: {Math.round(validation.area_px)} px²)
@@ -193,88 +186,93 @@ export default function MeshScreen() {
       ) : null}
 
       <View style={styles.paramsBox}>
-        <Text style={styles.paramsTitle}>Densidad de la malla</Text>
+        <Text style={styles.paramsTitle}>Densidad de la malla y subset</Text>
         <View style={styles.paramsRow}>
-          <View style={styles.paramField}>
-            <Text style={styles.label}>Filas de nodos</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              value={grid.filas}
-              onChangeText={(text) => {
-                setMesh(null);
-                setGrid((prev) => ({ ...prev, filas: text }));
-              }}
-            />
-          </View>
-          <View style={styles.paramField}>
-            <Text style={styles.label}>Columnas de nodos</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              value={grid.columnas}
-              onChangeText={(text) => {
-                setMesh(null);
-                setGrid((prev) => ({ ...prev, columnas: text }));
-              }}
-            />
-          </View>
+          {[
+            ['filas', 'Filas', grid, setGrid],
+            ['columnas', 'Columnas', grid, setGrid],
+            ['subset_size', 'Subset (px)', params, setParams],
+          ].map(([key, label, state, setState]) => (
+            <View key={key} style={styles.paramField}>
+              <Text style={styles.label}>{label}</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="number-pad"
+                value={state[key]}
+                accessibilityLabel={label}
+                onChangeText={(text) => {
+                  resetMesh();
+                  setState((prev) => ({ ...prev, [key]: text }));
+                }}
+              />
+            </View>
+          ))}
         </View>
         <Text style={styles.label}>
-          Total: {(Number(grid.filas) || 0) * (Number(grid.columnas) || 0)} nodos. Mas nodos dan un mapa mas fino pero
-          un analisis mas lento.
+          Solo son validos los nodos cuyo subset completo cae dentro de la forma; los demas se marcan en rojo y no se
+          rastrean.
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleBuildMesh}
-        disabled={!validation?.valid || building}
-      >
-        {building ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Construir malla</Text>}
+      <TouchableOpacity style={styles.button} onPress={handleBuildMesh} disabled={!validation?.valid || building}>
+        {building ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.buttonText}>Construir malla</Text>}
       </TouchableOpacity>
 
       {mesh ? (
-        <View style={styles.meshSummary}>
-          <Text style={styles.meshSummaryText}>Malla construida: {mesh.filas}×{mesh.columnas} = {mesh.nodos.length} nodos</Text>
+        <Text style={styles.meshSummaryText}>
+          Malla {mesh.filas}×{mesh.columnas}: {validCount} nodos validos de {mesh.nodos.length}
+        </Text>
+      ) : null}
+
+      {mesh && testType ? (
+        <View>
+          <Text style={styles.section}>2. Extensometro virtual ({testType.nombre})</Text>
+          <FrameAnnotator
+            imageUri={imageUri}
+            frameWidth={frameWidth}
+            frameHeight={frameHeight}
+            mode="points"
+            maxPoints={testType.n_puntos}
+            points={testPoints}
+            onChange={(next) => {
+              setTestPointsState(next);
+              setTestPointsSaved(false);
+            }}
+            nodes={mesh.nodos}
+            validity={mesh.validos}
+            referencePolygon={points}
+            hint={`Marca ${testType.n_puntos} puntos dentro de la malla verde: ${testType.puntos}.`}
+          />
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleSaveTestPoints}
+            disabled={testPoints.length !== testType.n_puntos || testPointsSaved}
+          >
+            <Text style={styles.buttonText}>{testPointsSaved ? 'Puntos guardados' : 'Guardar puntos del ensayo'}</Text>
+          </TouchableOpacity>
         </View>
       ) : null}
 
       <View style={styles.paramsBox}>
-        <Text style={styles.paramsTitle}>Parametros de analisis</Text>
-        <View style={styles.paramsRow}>
-          <View style={styles.paramField}>
-            <Text style={styles.label}>Subset (px)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              value={params.subset_size}
-              onChangeText={(text) => setParams((prev) => ({ ...prev, subset_size: text }))}
-            />
-          </View>
-          <View style={styles.paramField}>
-            <Text style={styles.label}>Paso (px)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              value={params.step_size}
-              onChangeText={(text) => setParams((prev) => ({ ...prev, step_size: text }))}
-            />
-          </View>
-          <View style={styles.paramField}>
-            <Text style={styles.label}>Busqueda (px)</Text>
-            <TextInput
-              style={styles.input}
-              keyboardType="number-pad"
-              value={params.search_range}
-              onChangeText={(text) => setParams((prev) => ({ ...prev, search_range: text }))}
-            />
-          </View>
-        </View>
+        <Text style={styles.paramsTitle}>3. Parametros de analisis</Text>
+        <Text style={styles.label}>Busqueda (px): desplazamiento maximo esperado entre el primer frame y cualquier otro.</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="number-pad"
+          value={params.search_range}
+          onChangeText={(text) => setParams((prev) => ({ ...prev, search_range: text }))}
+          accessibilityLabel="Rango de busqueda en px"
+        />
+        {mesh && !testPointsSaved ? (
+          <Text style={styles.label}>
+            Sin puntos del ensayo guardados, el analisis no tendra curva del ensayo ni propiedad (solo mapas y curvas
+            generales).
+          </Text>
+        ) : null}
       </View>
 
       <TouchableOpacity style={styles.startButton} onPress={handleStartAnalysis} disabled={!mesh || starting}>
-        {starting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Iniciar analisis</Text>}
+        {starting ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={styles.buttonText}>Iniciar analisis</Text>}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -283,151 +281,111 @@ export default function MeshScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    padding: 24,
-    backgroundColor: '#f7f9fb',
+    padding: spacing.lg,
+    backgroundColor: colors.background,
   },
   title: {
-    fontSize: 26,
+    fontSize: typography.title,
     fontWeight: '700',
-    color: '#17202a',
+    color: colors.text,
   },
   subtitle: {
-    marginTop: 4,
-    marginBottom: 16,
-    color: '#5d6d7e',
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    color: colors.mutedText,
+  },
+  section: {
+    fontSize: typography.subtitle,
+    fontWeight: '700',
+    color: colors.text,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   errorBox: {
     borderWidth: 1,
-    borderColor: '#f5c6cb',
-    backgroundColor: '#fdecea',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   errorText: {
-    color: '#c0392b',
+    color: colors.danger,
     fontWeight: '600',
     textAlign: 'center',
   },
-  imageWrapper: {
-    backgroundColor: '#1c2833',
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  marker: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#1f6feb',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  markerText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  nodeMarker: {
-    position: 'absolute',
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#2da44e',
-  },
-  pointActions: {
-    flexDirection: 'row',
-    marginTop: 12,
-  },
-  smallButton: {
-    flex: 1,
-    marginRight: 8,
-    height: 38,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5eaf0',
-  },
-  smallButtonText: {
-    color: '#5d6d7e',
-    fontWeight: '600',
-    fontSize: 13,
-  },
   loading: {
-    marginTop: 12,
+    marginTop: spacing.md,
   },
   validationText: {
-    marginTop: 12,
+    marginTop: spacing.md,
     fontWeight: '600',
     textAlign: 'center',
   },
   validText: {
-    color: '#2da44e',
+    color: colors.success,
   },
   invalidText: {
-    color: '#c0392b',
+    color: colors.danger,
   },
   button: {
     height: 48,
-    borderRadius: 8,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f6feb',
-    marginTop: 14,
+    backgroundColor: colors.primary,
+    marginTop: spacing.md,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '700',
   },
-  meshSummary: {
-    marginTop: 12,
-    alignItems: 'center',
-  },
   meshSummaryText: {
-    color: '#2da44e',
+    marginTop: spacing.md,
+    color: colors.success,
     fontWeight: '600',
+    textAlign: 'center',
   },
   paramsBox: {
-    marginTop: 20,
-    borderRadius: 8,
-    padding: 16,
-    backgroundColor: '#fff',
+    marginTop: spacing.lg,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e5eaf0',
+    borderColor: colors.border,
   },
   paramsTitle: {
     fontWeight: '700',
-    color: '#17202a',
-    marginBottom: 10,
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
   paramsRow: {
     flexDirection: 'row',
   },
   paramField: {
     flex: 1,
-    marginRight: 8,
+    marginRight: spacing.sm,
   },
   label: {
-    color: '#5d6d7e',
-    marginBottom: 6,
-    fontSize: 13,
+    color: colors.mutedText,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
+    fontSize: typography.small,
   },
   input: {
     height: 44,
     borderWidth: 1,
-    borderColor: '#d6dde5',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#f7f9fb',
+    borderColor: colors.inputBorder,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.background,
   },
   startButton: {
     height: 52,
-    borderRadius: 8,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2da44e',
-    marginTop: 20,
+    backgroundColor: colors.success,
+    marginTop: spacing.lg,
   },
 });

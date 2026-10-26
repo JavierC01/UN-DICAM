@@ -62,10 +62,20 @@ def rastrear_malla(
     nodos: list[dict[str, float]],
     subset_size: int,
     search_range: int,
-) -> list[ResultadoNodo]:
-    return [
-        calcular_desplazamiento_nodo(
-            imagen_ref, imagen_def, (int(round(nodo["x"])), int(round(nodo["y"]))), subset_size, search_range
-        )
-        for nodo in nodos
-    ]
+    validos: list[bool] | None = None,
+) -> list[ResultadoNodo | None]:
+    """Rastrea cada nodo valido; los invalidos y los que no se pudieron rastrear en este frame quedan en None."""
+    resultados: list[ResultadoNodo | None] = []
+    for i, nodo in enumerate(nodos):
+        if validos is not None and not validos[i]:
+            resultados.append(None)
+            continue
+        try:
+            resultados.append(
+                calcular_desplazamiento_nodo(
+                    imagen_ref, imagen_def, (int(round(nodo["x"])), int(round(nodo["y"]))), subset_size, search_range
+                )
+            )
+        except ValueError:
+            resultados.append(None)
+    return resultados

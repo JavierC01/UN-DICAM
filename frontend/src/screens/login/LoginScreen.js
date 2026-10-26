@@ -1,8 +1,9 @@
 import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { login } from '../../api/auth';
+import { restoreToken } from '../../api/session';
 import { ROUTES } from '../../navigation/routes';
 
 export default function LoginScreen() {
@@ -12,12 +13,21 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Si quedo una sesion guardada se entra directo; si expiro, el primer 401 devuelve al login.
+  useEffect(() => {
+    restoreToken()
+      .then((token) => {
+        if (token) navigation.reset({ index: 0, routes: [{ name: ROUTES.PROJECTS }] });
+      })
+      .catch(() => {});
+  }, [navigation]);
+
   const handleLogin = async () => {
     setError('');
     setLoading(true);
     try {
       await login(email, password);
-      navigation.navigate(ROUTES.PROJECTS);
+      navigation.reset({ index: 0, routes: [{ name: ROUTES.PROJECTS }] });
     } catch (err) {
       setError(err.message || 'No fue posible iniciar sesion.');
     } finally {

@@ -5,14 +5,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
-from app.Core.config import settings
+from app.Core.config import VERSION, settings
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.PROJECT_NAME,
         description="API backend para DIC Tool: FastAPI, Celery, Redis y PostgreSQL.",
-        version="1.0.0",
+        version=VERSION,
     )
 
     app.add_middleware(

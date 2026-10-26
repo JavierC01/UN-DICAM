@@ -1,73 +1,104 @@
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import * as DocumentPicker from 'expo-document-picker';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { getFirstFrame, listCameras, openDevice } from '../../api/devices';
+import { getFirstFrame, listCameras, openDevice, uploadVideo } from '../../api/devices';
 import { ROUTES } from '../../navigation/routes';
+import { colors, radii, spacing, touchTarget, typography } from '../../styles/theme';
+
+const SOURCES = [
+  { key: 'file', label: 'Subir video' },
+  { key: 'phone', label: 'Grabar' },
+  { key: 'camera', label: 'Camara PC' },
+];
 
 export default function VideoCaptureScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { projectId, projectName } = route.params || {};
 
-  const [sourceType, setSourceType] = useState('camera');
+  const [sourceType, setSourceType] = useState('file');
   const [cameras, setCameras] = useState([]);
-  const [loadingCameras, setLoadingCameras] = useState(true);
+  const [loadingCameras, setLoadingCameras] = useState(false);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
-  const [filePath, setFilePath] = useState('');
-  const [opening, setOpening] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [busyMessage, setBusyMessage] = useState('');
+  const [recording, setRecording] = useState(false);
   const [source, setSource] = useState(null);
   const [frame, setFrame] = useState(null);
   const [error, setError] = useState('');
+  const cameraRef = useRef(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   useEffect(() => {
-    (async () => {
-      try {
-        const list = await listCameras();
+    if (sourceType !== 'camera' || cameras.length > 0) return;
+    setLoadingCameras(true);
+    listCameras()
+      .then((list) => {
         setCameras(list);
         if (list.length > 0) setSelectedCameraId(list[0].id);
-      } catch (err) {
-        setError(err.message || 'No fue posible listar las camaras.');
-      } finally {
-        setLoadingCameras(false);
-      }
-    })();
-  }, []);
+      })
+      .catch((err) => setError(err.message || 'No fue posible listar las camaras.'))
+      .finally(() => setLoadingCameras(false));
+  }, [sourceType, cameras.length]);
 
-  const handleOpen = async () => {
-    const sourceId = sourceType === 'camera' ? selectedCameraId : filePath.trim();
-    if (sourceId === null || sourceId === undefined || sourceId === '') {
-      setError(sourceType === 'camera' ? 'Selecciona una camara.' : 'Ingresa la ruta del archivo de video.');
-      return;
-    }
-
+  const run = async (message, task) => {
     setError('');
-    setOpening(true);
+    setBusy(true);
+    setBusyMessage(message);
     setSource(null);
     setFrame(null);
     try {
-      const opened = await openDevice({ type: sourceType, source_id: sourceId });
+      const opened = await task();
       setSource(opened);
-      const firstFrame = await getFirstFrame(opened.source_id);
-      setFrame(firstFrame);
+      setFrame(await getFirstFrame(opened.source_id));
     } catch (err) {
       setError(err.message || 'No fue posible abrir la fuente de video.');
     } finally {
-      setOpening(false);
+      setBusy(false);
+    }
+  };
+
+  const handlePickFile = async () => {
+    const picked = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true });
+    if (picked.canceled || !picked.assets?.length) return;
+    run('Subiendo video...', () => uploadVideo(picked.assets[0]));
+  };
+
+  const handleOpenServerCamera = () => {
+    if (selectedCameraId === null) {
+      setError('Selecciona una camara.');
+      return;
+    }
+    run('Abriendo camara...', () => openDevice({ type: 'camera', source_id: selectedCameraId }));
+  };
+
+  const handleRecord = async () => {
+    if (recording) {
+      cameraRef.current?.stopRecording();
+      return;
+    }
+    setError('');
+    setRecording(true);
+    try {
+      const video = await cameraRef.current.recordAsync();
+      setRecording(false);
+      if (video?.uri) {
+        run('Subiendo grabacion...', () =>
+          uploadVideo({ uri: video.uri, name: 'grabacion.mp4', mimeType: 'video/mp4' })
+        );
+      }
+    } catch (err) {
+      setRecording(false);
+      setError(err.message || 'No fue posible grabar el video.');
     }
   };
 
   const handleNext = () => {
-    navigation.navigate(ROUTES.MESH, {
+    navigation.navigate(ROUTES.SETUP, {
       projectId,
       projectName,
       sourceId: source.source_id,
@@ -86,6 +117,42 @@ export default function VideoCaptureScreen() {
     );
   }
 
+  const renderPhone = () => {
+    if (Platform.OS === 'web') {
+      return <Text style={styles.muted}>La grabacion solo esta disponible en la app del celular. En el PC, sube el video.</Text>;
+    }
+    if (!cameraPermission?.granted || !micPermission?.granted) {
+      return (
+        <TouchableOpacity
+          style={styles.button}
+          onPress={async () => {
+            await requestCameraPermission();
+            await requestMicPermission();
+          }}
+        >
+          <Text style={styles.buttonText}>Permitir camara y microfono</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <View>
+        <Text style={styles.muted}>
+          Usa tripode, sin zoom ni enfoque automatico, con la probeta paralela al sensor. No muevas el celular durante el
+          ensayo: todo movimiento se mide como desplazamiento.
+        </Text>
+        <CameraView ref={cameraRef} style={styles.camera} mode="video" facing="back" />
+        <TouchableOpacity
+          style={[styles.button, recording && styles.stopButton]}
+          onPress={handleRecord}
+          disabled={busy}
+          accessibilityRole="button"
+        >
+          <Text style={styles.buttonText}>{recording ? 'Detener y subir' : 'Iniciar grabacion'}</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Captura de video</Text>
@@ -98,65 +165,74 @@ export default function VideoCaptureScreen() {
       ) : null}
 
       <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, sourceType === 'camera' && styles.tabActive]}
-          onPress={() => setSourceType('camera')}
-        >
-          <Text style={[styles.tabText, sourceType === 'camera' && styles.tabTextActive]}>Camara</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, sourceType === 'file' && styles.tabActive]}
-          onPress={() => setSourceType('file')}
-        >
-          <Text style={[styles.tabText, sourceType === 'file' && styles.tabTextActive]}>Archivo</Text>
-        </TouchableOpacity>
+        {SOURCES.map((s) => (
+          <TouchableOpacity
+            key={s.key}
+            style={[styles.tab, sourceType === s.key && styles.tabActive]}
+            onPress={() => setSourceType(s.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: sourceType === s.key }}
+          >
+            <Text style={[styles.tabText, sourceType === s.key && styles.tabTextActive]}>{s.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {sourceType === 'camera' ? (
-        loadingCameras ? (
-          <ActivityIndicator color="#1f6feb" style={styles.loading} />
-        ) : cameras.length === 0 ? (
-          <Text style={styles.muted}>No se detectaron camaras conectadas al servidor.</Text>
-        ) : (
-          cameras.map((camera) => (
-            <TouchableOpacity
-              key={camera.id}
-              style={[styles.cameraOption, selectedCameraId === camera.id && styles.cameraOptionSelected]}
-              onPress={() => setSelectedCameraId(camera.id)}
-            >
-              <Text style={styles.cameraName}>{camera.nombre}</Text>
-              <Text style={styles.cameraMeta}>
-                {camera.ancho}x{camera.alto} · {camera.fps.toFixed(0)} fps
-              </Text>
-            </TouchableOpacity>
-          ))
-        )
-      ) : (
-        <TextInput
-          style={styles.input}
-          placeholder="Ruta del archivo de video en el servidor"
-          value={filePath}
-          onChangeText={setFilePath}
-          autoCapitalize="none"
-        />
-      )}
+      {sourceType === 'file' ? (
+        <TouchableOpacity style={styles.button} onPress={handlePickFile} disabled={busy} accessibilityRole="button">
+          <Text style={styles.buttonText}>Elegir archivo de video</Text>
+        </TouchableOpacity>
+      ) : null}
 
-      <TouchableOpacity style={styles.button} onPress={handleOpen} disabled={opening}>
-        {opening ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Abrir fuente</Text>}
-      </TouchableOpacity>
+      {sourceType === 'phone' ? renderPhone() : null}
+
+      {sourceType === 'camera' ? (
+        <View>
+          <Text style={styles.muted}>Camaras conectadas al servidor (Windows o Linux con V4L2; no disponible en Docker).</Text>
+          {loadingCameras ? (
+            <ActivityIndicator color={colors.primary} style={styles.loading} />
+          ) : cameras.length === 0 ? (
+            <Text style={styles.muted}>No se detectaron camaras conectadas al servidor.</Text>
+          ) : (
+            cameras.map((camera) => (
+              <TouchableOpacity
+                key={camera.id}
+                style={[styles.cameraOption, selectedCameraId === camera.id && styles.cameraOptionSelected]}
+                onPress={() => setSelectedCameraId(camera.id)}
+              >
+                <Text style={styles.cameraName}>{camera.nombre}</Text>
+                <Text style={styles.cameraMeta}>
+                  {camera.ancho}x{camera.alto} · {camera.fps.toFixed(0)} fps
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
+          <TouchableOpacity style={styles.button} onPress={handleOpenServerCamera} disabled={busy}>
+            <Text style={styles.buttonText}>Abrir camara</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {busy ? (
+        <View style={styles.busy}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={styles.muted}>{busyMessage}</Text>
+        </View>
+      ) : null}
 
       {frame ? (
         <View style={styles.previewBox}>
           <Text style={styles.previewLabel}>
             Vista previa · {source.width}x{source.height} · {source.fps.toFixed(1)} fps
+            {source.duration_s ? ` · ${source.duration_s.toFixed(1)} s` : ''}
           </Text>
           <Image
             style={[styles.previewImage, { aspectRatio: source.width / source.height }]}
             source={{ uri: `data:${frame.mime_type};base64,${frame.image_base64}` }}
             resizeMode="contain"
           />
-          <TouchableOpacity style={styles.nextButton} onPress={handleNext}>
-            <Text style={styles.buttonText}>Siguiente: definir malla</Text>
+          <TouchableOpacity style={styles.nextButton} onPress={handleNext} accessibilityRole="button">
+            <Text style={styles.buttonText}>Siguiente: configurar el ensayo</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -167,123 +243,128 @@ export default function VideoCaptureScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    padding: 24,
-    backgroundColor: '#f7f9fb',
+    padding: spacing.lg,
+    backgroundColor: colors.background,
   },
   title: {
-    fontSize: 26,
+    fontSize: typography.title,
     fontWeight: '700',
-    color: '#17202a',
+    color: colors.text,
   },
   subtitle: {
-    marginTop: 4,
-    marginBottom: 18,
-    color: '#5d6d7e',
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+    color: colors.mutedText,
   },
   errorBox: {
     borderWidth: 1,
-    borderColor: '#f5c6cb',
-    backgroundColor: '#fdecea',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   errorText: {
-    color: '#c0392b',
+    color: colors.danger,
     fontWeight: '600',
     textAlign: 'center',
   },
   tabs: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   tab: {
     flex: 1,
-    height: 40,
+    height: touchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e5eaf0',
+    borderColor: colors.border,
   },
   tabActive: {
-    backgroundColor: '#1f6feb',
-    borderColor: '#1f6feb',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   tabText: {
-    color: '#5d6d7e',
+    color: colors.mutedText,
     fontWeight: '600',
   },
   tabTextActive: {
-    color: '#fff',
+    color: colors.onPrimary,
   },
   loading: {
-    marginVertical: 12,
+    marginVertical: spacing.md,
   },
   muted: {
-    color: '#5d6d7e',
-    marginBottom: 12,
+    color: colors.mutedText,
+    marginBottom: spacing.md,
+  },
+  camera: {
+    width: '100%',
+    aspectRatio: 3 / 4,
+    borderRadius: radii.md,
+    overflow: 'hidden',
+    marginBottom: spacing.sm,
   },
   cameraOption: {
-    borderRadius: 8,
-    padding: 14,
-    backgroundColor: '#fff',
+    borderRadius: radii.md,
+    padding: spacing.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#e5eaf0',
-    marginBottom: 8,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
   },
   cameraOptionSelected: {
-    borderColor: '#1f6feb',
-    backgroundColor: '#eef3fc',
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
   },
   cameraName: {
     fontWeight: '700',
-    color: '#17202a',
+    color: colors.text,
   },
   cameraMeta: {
-    marginTop: 4,
-    color: '#5d6d7e',
-    fontSize: 13,
-  },
-  input: {
-    height: 48,
-    borderWidth: 1,
-    borderColor: '#d6dde5',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    marginBottom: 12,
-    backgroundColor: '#fff',
+    marginTop: spacing.xs,
+    color: colors.mutedText,
+    fontSize: typography.small,
   },
   button: {
     height: 48,
-    borderRadius: 8,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f6feb',
-    marginTop: 4,
+    backgroundColor: colors.primary,
+    marginTop: spacing.xs,
+  },
+  stopButton: {
+    backgroundColor: colors.danger,
   },
   buttonText: {
-    color: '#fff',
+    color: colors.onPrimary,
     fontWeight: '700',
   },
+  busy: {
+    marginTop: spacing.md,
+    alignItems: 'center',
+  },
   previewBox: {
-    marginTop: 20,
+    marginTop: spacing.lg,
   },
   previewLabel: {
-    color: '#5d6d7e',
-    marginBottom: 8,
+    color: colors.mutedText,
+    marginBottom: spacing.sm,
   },
   previewImage: {
     width: '100%',
-    borderRadius: 8,
-    backgroundColor: '#1c2833',
+    borderRadius: radii.md,
+    backgroundColor: colors.frameBackground,
   },
   nextButton: {
     height: 48,
-    borderRadius: 8,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2da44e',
-    marginTop: 14,
+    backgroundColor: colors.success,
+    marginTop: spacing.md,
   },
 });

@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, authenticatedUrl } from './client';
 
 export function startAnalysis(payload) {
   return apiRequest('/analysis/start', {
@@ -25,4 +25,16 @@ export function cancelAnalysis(analysisId) {
     method: 'DELETE',
     fallbackMessage: 'No fue posible cancelar el analisis.',
   });
+}
+
+export function fitProperty(analysisId, range) {
+  return apiRequest(`/analysis/${analysisId}/propiedad`, {
+    method: 'POST',
+    body: range,
+    fallbackMessage: 'No fue posible ajustar la propiedad.',
+  });
+}
+
+export function exportUrl(format, analysisId) {
+  return authenticatedUrl(`/export/${format}/${analysisId}`);
 }
